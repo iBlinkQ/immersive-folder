@@ -1,7 +1,6 @@
 import {
   addIcon,
   App,
-  Platform,
   Plugin,
   PluginSettingTab,
   Setting,
@@ -24,57 +23,6 @@ interface ImmersiveFolderSettings {
 /* app.commands is real but absent from the public typings. */
 interface AppWithCommands {
   commands: { executeCommandById(id: string): boolean };
-}
-
-/* Neither is the hotkey manager, nor the hotkeys tab's own search box. Both
-   are only ever read through the guarded helpers below: if a future Obsidian
-   renames either, the row degrades to plain text and a dead-end button rather
-   than throwing. */
-interface Hotkey {
-  modifiers: string[];
-  key: string;
-}
-
-interface AppWithHotkeys {
-  hotkeyManager?: { getHotkeys?(id: string): Hotkey[] | undefined };
-  setting?: {
-    openTabById?(id: string): void;
-    activeTab?: { setQuery?(query: string): void } | null;
-  };
-}
-
-const COMMAND_ID = "immersive-folder:toggle";
-
-/* Obsidian stores modifiers by name; only the reader knows what they look
-   like on this platform. Mod is Command on a Mac and Control everywhere
-   else — printing "Mod" would be showing the user our own plumbing. */
-function formatHotkey(hotkey: Hotkey): string {
-  const mac = Platform.isMacOS;
-  const symbols: Record<string, string> = mac
-    ? { Mod: "⌘", Meta: "⌘", Ctrl: "⌃", Alt: "⌥", Shift: "⇧" }
-    : { Mod: "Ctrl", Meta: "Win", Ctrl: "Ctrl", Alt: "Alt", Shift: "Shift" };
-  const parts = hotkey.modifiers.map((m) => symbols[m] ?? m);
-  parts.push(hotkey.key.length === 1 ? hotkey.key.toUpperCase() : hotkey.key);
-  return parts.join(mac ? " " : " + ");
-}
-
-function currentHotkeys(app: App): string[] {
-  const manager = (app as unknown as AppWithHotkeys).hotkeyManager;
-  if (!manager || typeof manager.getHotkeys !== "function") return [];
-  const bound = manager.getHotkeys(COMMAND_ID);
-  return Array.isArray(bound) ? bound.map(formatHotkey) : [];
-}
-
-/* Obsidian has no API for editing a hotkey in place, so the row hands the
-   user off to the page that does — with the command already filtered, which
-   is the whole point: finding one command among several hundred is the part
-   that makes people give up on binding a key. */
-function openHotkeySettings(app: App, query: string): void {
-  const setting = (app as unknown as AppWithHotkeys).setting;
-  if (!setting || typeof setting.openTabById !== "function") return;
-  setting.openTabById("hotkeys");
-  const tab = setting.activeTab;
-  if (tab && typeof tab.setQuery === "function") tab.setQuery(query);
 }
 
 /* So is the explorer's own map of rows. Everything that touches it goes
@@ -104,11 +52,6 @@ const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
    adding one object rather than hunting through the file. */
 interface Strings {
   command: string;
-  hotkey: string;
-  hotkeyBound: string;
-  hotkeyNone: string;
-  hotkeyHint: string;
-  hotkeyButton: string;
   ariaOn: string;
   ariaOff: string;
   intro: string;
@@ -133,13 +76,6 @@ const EN: Strings = {
     "— three rows with the middle one picked out. It takes on your accent " +
     "colour while the cover is up. The “Toggle immersive folder” command " +
     "does the same, if you would rather bind a hotkey.",
-  hotkey: "Hotkey",
-  hotkeyBound: "Bound to {keys}. ",
-  hotkeyNone: "No hotkey yet. ",
-  hotkeyHint:
-    "Opens Obsidian's hotkey page with this command already filtered out of " +
-    "the several hundred others.",
-  hotkeyButton: "Set hotkey",
   language: "Language",
   languageDesc:
     "Follows whatever language Obsidian is set to, unless you pick one here.",
@@ -173,11 +109,6 @@ const ZH: Strings = {
     "遮挡的开关在文件列表顶部那个按钮上 —— 三行横线、中间一行被挑出来的那个。" +
     "遮挡开启时它会染上你的主题强调色。命令面板里的「切换沉浸模式」是同一个开关，" +
     "想绑快捷键就用它。",
-  hotkey: "快捷键",
-  hotkeyBound: "当前绑定 {keys}。",
-  hotkeyNone: "还没有绑定。",
-  hotkeyHint: "点击会打开 Obsidian 的快捷键设置，并已从几百条命令里筛出这一条。",
-  hotkeyButton: "去设置",
   language: "语言",
   languageDesc: "默认跟随 Obsidian 的界面语言，也可以在这里单独指定。",
   languageAuto: "跟随 Obsidian",
@@ -633,22 +564,6 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
             this.plugin.registerToggleCommand();
             this.display();
           })
-      );
-
-    /* Read fresh on every display(), so coming back from the hotkey page
-       shows what was just bound. */
-    const bound = currentHotkeys(this.app);
-    new Setting(containerEl)
-      .setName(t.hotkey)
-      .setDesc(
-        (bound.length
-          ? t.hotkeyBound.replace("{keys}", bound.join(", "))
-          : t.hotkeyNone) + t.hotkeyHint
-      )
-      .addButton((button) =>
-        button
-          .setButtonText(t.hotkeyButton)
-          .onClick(() => openHotkeySettings(this.app, "Immersive Folder"))
       );
 
     new Setting(containerEl)
