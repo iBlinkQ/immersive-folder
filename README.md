@@ -5,8 +5,6 @@ English · [简体中文](README.zh-CN.md)
 An Obsidian plugin. While you are working in a folder, that folder stays
 readable and everything else in the file explorer drops behind skeleton bars.
 
-![the file explorer with one folder readable and the rest as bars](docs/screenshot.png)
-
 The folder is picked automatically from the file you have open — there is
 nothing to select and nothing to remember to turn off when you move on. Open a
 note somewhere else and the bars follow you there.
