@@ -1,0 +1,10 @@
+{
+  "id": "immersive-folder",
+  "name": "Immersive Folder",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Immerse the file explorer in the folder you are working in — every other file and folder drops behind skeleton bars, for focus, for privacy over your shoulder, and for clean screen recordings.",
+  "author": "iBlinkQ",
+  "authorUrl": "https://github.com/iBlinkQ",
+  "isDesktopOnly": false
+}

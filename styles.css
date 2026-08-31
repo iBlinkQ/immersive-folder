@@ -1,0 +1,7 @@
+/* The bar takes a theme variable rather than a fixed colour, so the veil sits
+   native in whatever theme is running. Override either of these in a CSS
+   snippet to pitch the bars to your own palette. */
+body {
+  --immersive-folder-bar: var(--background-modifier-border);
+  --immersive-folder-bar-opacity: 1;
+}
