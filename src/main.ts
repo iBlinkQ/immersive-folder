@@ -1,4 +1,11 @@
-import { App, Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
+import {
+  addIcon,
+  App,
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  setIcon,
+} from "obsidian";
 
 interface ImmersiveFolderSettings {
   enabled: boolean;
@@ -24,12 +31,45 @@ const BUTTON_CLASS = "immersive-folder-button";
 const STYLE_ID = "immersive-folder-rules";
 const SCOPE = `.${BODY_CLASS} .nav-files-container`;
 
+const ICON_ON = "immersive-folder-on";
+const ICON_OFF = "immersive-folder-off";
+
+/* The button draws the plugin's own idea rather than a stock glyph: rows of
+   text with one of them brought forward. Off is three plain rows; on drops the
+   outer two back and thickens the middle one, which is the covered list in
+   miniature.
+
+   addIcon draws into a 0 0 100 100 box, and Obsidian's .svg-icon rule sets
+   stroke-width for a 24-unit box, so every stroke states its own width here or
+   it renders hairline-thin. At the ~18px this is displayed at, arrowheads of
+   the kind iA Writer can afford collapse into specks — the weight contrast has
+   to carry the meaning on its own. */
+function registerIcons(): void {
+  const row = (d: string, extra = "") =>
+    `<path d="${d}" fill="none" stroke="currentColor" stroke-linecap="round" ${extra}/>`;
+
+  addIcon(
+    ICON_OFF,
+    row("M20 28 H80", 'stroke-width="9"') +
+      row("M20 50 H80", 'stroke-width="9"') +
+      row("M20 72 H80", 'stroke-width="9"')
+  );
+
+  addIcon(
+    ICON_ON,
+    row("M24 28 H76", 'stroke-width="8" opacity="0.3"') +
+      row("M16 50 H84", 'stroke-width="11"') +
+      row("M24 72 H76", 'stroke-width="8" opacity="0.3"')
+  );
+}
+
 export default class ImmersiveFolderPlugin extends Plugin {
   settings: ImmersiveFolderSettings = { ...DEFAULT_SETTINGS };
   private styleEl: HTMLStyleElement | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    registerIcons();
 
     this.styleEl = document.head.createEl("style", { attr: { id: STYLE_ID } });
     this.register(() => this.styleEl?.remove());
@@ -147,7 +187,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
       const on = this.settings.enabled;
       button.empty();
-      setIcon(button, on ? "eye-off" : "eye");
+      setIcon(button, on ? ICON_ON : ICON_OFF);
       /* Tracks the setting, not whether the cover happens to be drawn right
          now: with no file open the cover lifts on its own, and a button that
          flipped itself back to "off" would read as having been switched off
