@@ -40,11 +40,15 @@ The state is remembered across restarts.
 one you are in, so you can still tell where you are in the tree. On by
 default. Turn it off and the trail is skeletoned too.
 
-**Jump to the folder when switching on** — expands and scrolls to the folder
-you are in as the bars come down. Without it, switching on while that folder
-happens to be scrolled out of view leaves you looking at a screen of bars and
-nothing else. On by default; it only fires on the way on, never as you move
-between notes.
+**Keep the active file in view** — scrolls the explorer to each note as you
+switch to it, expanding whatever it takes to show it. Without it, switching to
+a note whose folder is scrolled out of view leaves you looking at a screen of
+bars and nothing else. On by default.
+
+**Collapse every other folder** — on each switch, folds away every folder
+except the one you are in. Less to scroll past, and it stops the bars from
+giving away how many files the other folders hold. Whatever was open is put
+back when you leave immersive mode. On by default.
 
 ### Changing how the bars look
 
@@ -64,12 +68,13 @@ body {
 anyone with developer tools can read them. It is built for cameras, projectors
 and the desk next to you, not for an adversary with access to your machine.
 
-Two things the bars still give away: **how many** files and folders are there,
-and **how deep** the tree goes, since the rows and their indentation stay put.
-If that matters more to you than keeping the shape of the vault visible, a
-hiding plugin such as [Explorer
-Focus](https://github.com/davidvkimball/obsidian-explorer-focus) removes the
-rows outright instead.
+With **Collapse every other folder** turned off, the bars still give away
+**how many** files each folder holds and **how deep** the tree goes, since
+every row stays where it was. Leaving that setting on folds all of it away —
+what remains is one bar per folder you are not in. If you would rather the
+rows disappear altogether, a hiding plugin such as [Explorer
+Focus](https://github.com/davidvkimball/obsidian-explorer-focus) removes them
+outright instead.
 
 The cover applies to the file explorer only. Tab titles, the note's own
 breadcrumb, search results and the quick switcher are untouched — including
@@ -87,6 +92,12 @@ at all.
 
 If no file is open the stylesheet is emptied rather than left covering
 everything, so you can never be stranded in a column of anonymous bars.
+
+Collapsing and scrolling go through the explorer's own row map, which is
+internal API — every use of it is guarded, so if a future Obsidian renames it
+those two settings stop working and the cover itself carries on. The folding
+runs only when the active file actually changes, not on every redraw, or it
+would fight you each time you moved a pane.
 
 ## Installing
 

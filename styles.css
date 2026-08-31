@@ -5,3 +5,12 @@ body {
   --immersive-folder-bar: var(--background-modifier-border);
   --immersive-folder-bar-opacity: 1;
 }
+
+/* The button carries an accent wash while the cover is up. Obsidian's own
+   is-active only tints the glyph, which is easy to miss on a toolbar where
+   every other button is the same shape — and "is it on right now" is the one
+   question this button exists to answer. */
+.immersive-folder-button.is-active {
+  background-color: hsla(var(--interactive-accent-hsl), 0.18);
+  color: var(--text-accent);
+}

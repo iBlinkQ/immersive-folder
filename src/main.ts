@@ -10,7 +10,11 @@ import {
 interface ImmersiveFolderSettings {
   enabled: boolean;
   revealTrail: boolean;
-  revealOnEnable: boolean;
+  keepActiveInView: boolean;
+  collapseOthers: boolean;
+  /* Which folders were open before the tree was folded down, so leaving
+     immersive mode can hand the explorer back the way it was found. */
+  expandedBefore: string[];
 }
 
 /* app.commands is real but absent from the public typings. */
@@ -18,10 +22,25 @@ interface AppWithCommands {
   commands: { executeCommandById(id: string): boolean };
 }
 
+/* So is the explorer's own map of rows. Everything that touches it goes
+   through explorerViews(), which checks before handing one over: a future
+   Obsidian could rename this, and the cover has to keep working if it does. */
+interface ExplorerItem {
+  collapsible: boolean;
+  collapsed: boolean;
+  setCollapsed(value: boolean): void;
+}
+
+interface FileExplorerView {
+  fileItems: Record<string, ExplorerItem>;
+}
+
 const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   enabled: false,
   revealTrail: true,
-  revealOnEnable: true,
+  keepActiveInView: true,
+  collapseOthers: true,
+  expandedBefore: [],
 };
 
 /* Everything the plugin draws hangs off this one body class, so lifting the
@@ -48,24 +67,38 @@ function registerIcons(): void {
   const row = (d: string, extra = "") =>
     `<path d="${d}" fill="none" stroke="currentColor" stroke-linecap="round" ${extra}/>`;
 
+  /* Off — a plain list with its middle row already carrying the weight, so
+     the button reads as being about one row among many even before you press
+     it. */
   addIcon(
     ICON_OFF,
-    row("M20 28 H80", 'stroke-width="9"') +
-      row("M20 50 H80", 'stroke-width="9"') +
-      row("M20 72 H80", 'stroke-width="9"')
+    row("M22 28 H78", 'stroke-width="7" opacity="0.35"') +
+      row("M20 50 H80", 'stroke-width="11"') +
+      row("M22 72 H78", 'stroke-width="7" opacity="0.35"')
   );
+
+  /* On — the same list with two carets closing in on that row. They point
+     inward, at the row, the way iA Writer marks its focused line; pointing
+     outward would read as expanding rather than narrowing.
+     The rows pull in to clear a path for the carets, which need every unit of
+     size they can get at this scale. */
+  const caret = (d: string) =>
+    `<path d="${d}" fill="currentColor" stroke="none"/>`;
 
   addIcon(
     ICON_ON,
-    row("M24 28 H76", 'stroke-width="8" opacity="0.3"') +
-      row("M16 50 H84", 'stroke-width="11"') +
-      row("M24 72 H76", 'stroke-width="8" opacity="0.3"')
+    row("M26 28 H74", 'stroke-width="7" opacity="0.3"') +
+      row("M38 50 H62", 'stroke-width="11"') +
+      row("M26 72 H74", 'stroke-width="7" opacity="0.3"') +
+      caret("M30 50 L12 37 V63 Z") +
+      caret("M70 50 L88 37 V63 Z")
   );
 }
 
 export default class ImmersiveFolderPlugin extends Plugin {
   settings: ImmersiveFolderSettings = { ...DEFAULT_SETTINGS };
   private styleEl: HTMLStyleElement | null = null;
+  private lastSyncedPath: string | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -99,20 +132,30 @@ export default class ImmersiveFolderPlugin extends Plugin {
   }
 
   async toggle(): Promise<void> {
-    this.settings.enabled = !this.settings.enabled;
-    await this.saveSettings();
+    const turningOn = !this.settings.enabled;
 
-    /* Switching on while the folder you are in is scrolled off-screen leaves
-       nothing but bars in view, which reads as a broken plugin rather than a
-       working one. Obsidian's own reveal expands the folder and scrolls to
-       it, so the one readable thing is the thing you are looking at.
-       Only on the way on: doing it on every redraw would yank the explorer
-       around every time you switched notes. */
-    if (this.settings.enabled && this.settings.revealOnEnable) {
-      (this.app as unknown as AppWithCommands).commands.executeCommandById(
-        "file-explorer:reveal-active-file"
-      );
+    if (this.settings.collapseOthers) {
+      if (turningOn) this.captureExpanded();
+      else this.restoreExpanded();
     }
+
+    this.settings.enabled = turningOn;
+    /* Force the next sync through: the file has not changed, but the tree
+       around it is about to. */
+    this.lastSyncedPath = null;
+    await this.saveSettings();
+  }
+
+  /* Called when the setting is flipped while immersive mode is already on,
+     where there is no toggle to hang the capture and restore off. */
+  async applyCollapseOthers(value: boolean): Promise<void> {
+    if (this.settings.enabled) {
+      if (value) this.captureExpanded();
+      else this.restoreExpanded();
+    }
+    this.settings.collapseOthers = value;
+    this.lastSyncedPath = null;
+    await this.saveSettings();
   }
 
   async saveSettings(): Promise<void> {
@@ -121,7 +164,16 @@ export default class ImmersiveFolderPlugin extends Plugin {
   }
 
   private async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const saved = (await this.loadData()) as
+      | (Partial<ImmersiveFolderSettings> & { revealOnEnable?: boolean })
+      | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+    /* revealOnEnable only fired as the cover came down; keepActiveInView is
+       the same idea applied to every switch. Carry the old value over. */
+    if (saved && typeof saved.revealOnEnable === "boolean") {
+      this.settings.keepActiveInView = saved.revealOnEnable;
+    }
   }
 
   private redraw(): void {
@@ -131,6 +183,75 @@ export default class ImmersiveFolderPlugin extends Plugin {
     document.body.toggleClass(BODY_CLASS, rules !== "");
     if (this.styleEl) this.styleEl.textContent = rules;
     this.syncButtons();
+    this.syncExplorer();
+  }
+
+  /* The shape of the tree follows the active file: fold away what you are not
+     in, then scroll to what you are.
+
+     Gated on the file actually changing. redraw() also runs on every layout
+     change, and re-collapsing the tree on each of those would fight the user
+     every time they moved a pane or opened a sidebar. */
+  private syncExplorer(): void {
+    if (!this.settings.enabled) {
+      this.lastSyncedPath = null;
+      return;
+    }
+
+    const file = this.app.workspace.getActiveFile();
+    if (!file || file.path === this.lastSyncedPath) return;
+    this.lastSyncedPath = file.path;
+
+    if (this.settings.collapseOthers) this.collapseAway(file.parent?.path);
+    if (this.settings.keepActiveInView || this.settings.collapseOthers) {
+      (this.app as unknown as AppWithCommands).commands.executeCommandById(
+        "file-explorer:reveal-active-file"
+      );
+    }
+  }
+
+  /* Collapse every folder that is not on the way to `keep`. The trail itself
+     is left alone — collapsing it only for reveal to expand it again a frame
+     later shows up as a flicker. */
+  private collapseAway(keep: string | undefined): void {
+    for (const view of this.explorerViews()) {
+      for (const [path, item] of Object.entries(view.fileItems)) {
+        if (!item.collapsible || item.collapsed) continue;
+        if (keep && (keep === path || keep.startsWith(`${path}/`))) continue;
+        item.setCollapsed(true);
+      }
+    }
+  }
+
+  private captureExpanded(): void {
+    const open: string[] = [];
+    for (const view of this.explorerViews()) {
+      for (const [path, item] of Object.entries(view.fileItems)) {
+        if (item.collapsible && !item.collapsed) open.push(path);
+      }
+    }
+    this.settings.expandedBefore = open;
+  }
+
+  private restoreExpanded(): void {
+    const wanted = new Set(this.settings.expandedBefore);
+    for (const view of this.explorerViews()) {
+      for (const [path, item] of Object.entries(view.fileItems)) {
+        if (item.collapsible && item.collapsed && wanted.has(path)) {
+          item.setCollapsed(false);
+        }
+      }
+    }
+    this.settings.expandedBefore = [];
+  }
+
+  private *explorerViews(): Generator<FileExplorerView> {
+    for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
+      const view = leaf.view as unknown as FileExplorerView | undefined;
+      if (view && typeof view.fileItems === "object" && view.fileItems) {
+        yield view;
+      }
+    }
   }
 
   private buildRules(): string {
@@ -346,17 +467,28 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Jump to the folder when switching on")
+      .setName("Keep the active file in view")
       .setDesc(
-        "Expands and scrolls to the folder you are in, so you are not left looking at a screen of bars when the folder happens to be scrolled out of view."
+        "Scrolls the explorer to each note as you switch to it, expanding whatever it takes to show it. Without this, switching to a note whose folder is scrolled out of view leaves you looking at bars alone."
       )
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.revealOnEnable)
+          .setValue(this.plugin.settings.keepActiveInView)
           .onChange(async (value) => {
-            this.plugin.settings.revealOnEnable = value;
+            this.plugin.settings.keepActiveInView = value;
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("Collapse every other folder")
+      .setDesc(
+        "On each switch, folds away every folder except the one you are in. Less to scroll past, and it stops the bars from giving away how many files the other folders hold. Whatever was open is restored when you leave immersive mode."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.collapseOthers)
+          .onChange((value) => void this.plugin.applyCollapseOthers(value))
       );
 
     containerEl.createEl("p", {
