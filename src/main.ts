@@ -7,7 +7,10 @@ import {
   setIcon,
 } from "obsidian";
 
+type Language = "auto" | "en" | "zh";
+
 interface ImmersiveFolderSettings {
+  language: Language;
   enabled: boolean;
   revealTrail: boolean;
   keepActiveInView: boolean;
@@ -36,12 +39,106 @@ interface FileExplorerView {
 }
 
 const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
+  language: "auto",
   enabled: false,
   revealTrail: true,
   keepActiveInView: true,
   collapseOthers: true,
   expandedBefore: [],
 };
+
+
+/* Every user-facing string in one place, so a new language is a matter of
+   adding one object rather than hunting through the file. */
+interface Strings {
+  command: string;
+  ariaOn: string;
+  ariaOff: string;
+  intro: string;
+  language: string;
+  languageDesc: string;
+  languageAuto: string;
+  trail: string;
+  trailDesc: string;
+  keepInView: string;
+  keepInViewDesc: string;
+  collapse: string;
+  collapseDesc: string;
+  disclaimer: string;
+}
+
+const EN: Strings = {
+  command: "Toggle immersive folder",
+  ariaOn: "Leave immersive folder",
+  ariaOff: "Immerse in this folder",
+  intro:
+    "The cover is switched from the button at the top of the file explorer " +
+    "— three rows with the middle one picked out. It takes on your accent " +
+    "colour while the cover is up. The “Toggle immersive folder” command " +
+    "does the same, if you would rather bind a hotkey.",
+  language: "Language",
+  languageDesc:
+    "Follows whatever language Obsidian is set to, unless you pick one here.",
+  languageAuto: "Match Obsidian",
+  trail: "Show the trail back to the root",
+  trailDesc:
+    "Keeps the names of the folders above the one you are in, so you can " +
+    "still tell where you are. Turn it off to skeleton the trail as well.",
+  keepInView: "Keep the active file in view",
+  keepInViewDesc:
+    "Scrolls the explorer to each note as you switch to it, expanding " +
+    "whatever it takes to show it. Without this, switching to a note whose " +
+    "folder is scrolled out of view leaves you looking at bars alone.",
+  collapse: "Collapse every other folder",
+  collapseDesc:
+    "On each switch, folds away every folder except the one you are in. " +
+    "Less to scroll past, and it stops the bars from giving away how many " +
+    "files the other folders hold. Whatever was open is restored when you " +
+    "leave immersive mode.",
+  disclaimer:
+    "Immersive folder is a visual cover, not encryption. It is built for " +
+    "screen sharing, recordings and the person sitting next to you — the " +
+    "names are still in the page for anyone with developer tools.",
+};
+
+const ZH: Strings = {
+  command: "切换沉浸模式",
+  ariaOn: "退出沉浸模式",
+  ariaOff: "沉浸到当前文件夹",
+  intro:
+    "遮挡的开关在文件列表顶部那个按钮上 —— 三行横线、中间一行被挑出来的那个。" +
+    "遮挡开启时它会染上你的主题强调色。命令面板里的「切换沉浸模式」是同一个开关，" +
+    "想绑快捷键就用它。",
+  language: "语言",
+  languageDesc: "默认跟随 Obsidian 的界面语言，也可以在这里单独指定。",
+  languageAuto: "跟随 Obsidian",
+  trail: "保留回到根目录的路径",
+  trailDesc:
+    "保留你所在文件夹上层那些文件夹的名字，这样你还知道自己在树的哪个位置。" +
+    "关掉之后，这条路径也会一并变成骨架条。",
+  keepInView: "让当前文件始终可见",
+  keepInViewDesc:
+    "每次切换笔记时把文件列表滚动过去，需要展开哪些文件夹就展开哪些。" +
+    "没有这个的话，切到一篇所在文件夹被滚出视野的笔记，你会只看到满屏骨架条。",
+  collapse: "收起其他所有文件夹",
+  collapseDesc:
+    "每次切换时，把除当前文件夹之外的都折叠起来。既少了要滚过的内容，" +
+    "也堵上了骨架条泄露「其他文件夹里有多少文件」这个口子。" +
+    "退出沉浸模式时，原本展开的会照原样还给你。",
+  disclaimer:
+    "沉浸模式是视觉遮挡，不是加密。它是为投屏、录屏和你旁边那个人准备的 —— " +
+    "那些名字仍然在页面里，任何人打开开发者工具都能读到。",
+};
+
+/* Obsidian stamps its UI language onto <html lang>, which is public enough
+   to read without reaching into anything private. */
+function stringsFor(language: Language): Strings {
+  const lang =
+    language === "auto"
+      ? document.documentElement.lang || "en"
+      : language;
+  return lang.startsWith("zh") ? ZH : EN;
+}
 
 /* Everything the plugin draws hangs off this one body class, so lifting the
    cover is a single class away and can never leave half-covered rows behind. */
@@ -92,11 +189,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.register(() => document.body.removeClass(BODY_CLASS));
     this.register(() => this.removeButtons());
 
-    this.addCommand({
-      id: "toggle",
-      name: "Toggle immersive folder",
-      callback: () => void this.toggle(),
-    });
+    this.registerToggleCommand();
 
     this.addSettingTab(new ImmersiveFolderSettingTab(this.app, this));
 
@@ -112,6 +205,22 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("rename", redraw));
 
     this.app.workspace.onLayoutReady(redraw);
+  }
+
+  /* The active vocabulary. Read fresh each time rather than cached, so
+     changing the setting takes effect on the next redraw. */
+  get t(): Strings {
+    return stringsFor(this.settings.language);
+  }
+
+  /* Registering the same id again replaces the command, which is how the
+     name follows a language change without a reload. */
+  registerToggleCommand(): void {
+    this.addCommand({
+      id: "toggle",
+      name: this.t.command,
+      callback: () => void this.toggle(),
+    });
   }
 
   async toggle(): Promise<void> {
@@ -300,7 +409,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
       button.toggleClass("is-active", on);
       button.setAttribute(
         "aria-label",
-        on ? "Leave immersive folder" : "Immerse in this folder"
+        on ? this.t.ariaOn : this.t.ariaOff
       );
     }
   }
@@ -423,6 +532,7 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    const t = this.plugin.t;
 
     /* Deliberately no on/off switch here. The cover is something you flick
        while you work, and it already has a button sitting where the work is,
@@ -432,18 +542,33 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
        below, which you set once and forget. */
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text:
-        "The cover is switched from the button at the top of the file " +
-        "explorer — three rows with the middle one picked out. It takes on " +
-        "your accent colour while the cover is up. The “Toggle immersive " +
-        "folder” command does the same, if you would rather bind a hotkey.",
+      text: t.intro,
     });
 
+    /* First, and not last: someone who cannot read the rest of this page is
+       exactly the person who needs to find this row. */
     new Setting(containerEl)
-      .setName("Show the trail back to the root")
-      .setDesc(
-        "Keeps the names of the folders above the one you are in, so you can still tell where you are. Turn it off to skeleton the trail as well."
-      )
+      .setName(t.language)
+      .setDesc(t.languageDesc)
+      .addDropdown((drop) =>
+        drop
+          .addOption("auto", t.languageAuto)
+          .addOption("en", "English")
+          .addOption("zh", "简体中文")
+          .setValue(this.plugin.settings.language)
+          .onChange(async (value) => {
+            this.plugin.settings.language = value as Language;
+            await this.plugin.saveSettings();
+            /* The command name is fixed at registration, so it has to be
+               registered again to follow the new language. */
+            this.plugin.registerToggleCommand();
+            this.display();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t.trail)
+      .setDesc(t.trailDesc)
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.revealTrail)
@@ -454,10 +579,8 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Keep the active file in view")
-      .setDesc(
-        "Scrolls the explorer to each note as you switch to it, expanding whatever it takes to show it. Without this, switching to a note whose folder is scrolled out of view leaves you looking at bars alone."
-      )
+      .setName(t.keepInView)
+      .setDesc(t.keepInViewDesc)
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.keepActiveInView)
@@ -468,10 +591,8 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Collapse every other folder")
-      .setDesc(
-        "On each switch, folds away every folder except the one you are in. Less to scroll past, and it stops the bars from giving away how many files the other folders hold. Whatever was open is restored when you leave immersive mode."
-      )
+      .setName(t.collapse)
+      .setDesc(t.collapseDesc)
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.collapseOthers)
@@ -480,10 +601,7 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text:
-        "Immersive folder is a visual cover, not encryption. It is built " +
-        "for screen sharing, recordings and the person sitting next to you " +
-        "— the names are still in the page for anyone with developer tools.",
+      text: t.disclaimer,
     });
   }
 }

@@ -37,6 +37,10 @@ The state is remembered across restarts.
 
 ### Settings
 
+**Language** — the interface follows whatever language Obsidian itself is set
+to. English and 简体中文 ship with the plugin; pick one here to override the
+match. Everything switches over on the spot, the command name included.
+
 **Show the trail back to the root** — keeps the names of the folders above the
 one you are in, so you can still tell where you are in the tree. On by
 default. Turn it off and the trail is skeletoned too.
