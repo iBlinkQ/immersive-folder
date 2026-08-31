@@ -3,11 +3,18 @@ import { App, Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
 interface ImmersiveFolderSettings {
   enabled: boolean;
   revealTrail: boolean;
+  revealOnEnable: boolean;
+}
+
+/* app.commands is real but absent from the public typings. */
+interface AppWithCommands {
+  commands: { executeCommandById(id: string): boolean };
 }
 
 const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   enabled: false,
   revealTrail: true,
+  revealOnEnable: true,
 };
 
 /* Everything the plugin draws hangs off this one body class, so lifting the
@@ -54,6 +61,18 @@ export default class ImmersiveFolderPlugin extends Plugin {
   async toggle(): Promise<void> {
     this.settings.enabled = !this.settings.enabled;
     await this.saveSettings();
+
+    /* Switching on while the folder you are in is scrolled off-screen leaves
+       nothing but bars in view, which reads as a broken plugin rather than a
+       working one. Obsidian's own reveal expands the folder and scrolls to
+       it, so the one readable thing is the thing you are looking at.
+       Only on the way on: doing it on every redraw would yank the explorer
+       around every time you switched notes. */
+    if (this.settings.enabled && this.settings.revealOnEnable) {
+      (this.app as unknown as AppWithCommands).commands.executeCommandById(
+        "file-explorer:reveal-active-file"
+      );
+    }
   }
 
   async saveSettings(): Promise<void> {
@@ -252,6 +271,20 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.revealTrail)
           .onChange(async (value) => {
             this.plugin.settings.revealTrail = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Jump to the folder when switching on")
+      .setDesc(
+        "Expands and scrolls to the folder you are in, so you are not left looking at a screen of bars when the folder happens to be scrolled out of view."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.revealOnEnable)
+          .onChange(async (value) => {
+            this.plugin.settings.revealOnEnable = value;
             await this.plugin.saveSettings();
           })
       );

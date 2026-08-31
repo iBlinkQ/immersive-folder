@@ -34,6 +34,12 @@ The state is remembered across restarts.
 one you are in, so you can still tell where you are in the tree. On by
 default. Turn it off and the trail is skeletoned too.
 
+**Jump to the folder when switching on** — expands and scrolls to the folder
+you are in as the bars come down. Without it, switching on while that folder
+happens to be scrolled out of view leaves you looking at a screen of bars and
+nothing else. On by default; it only fires on the way on, never as you move
+between notes.
+
 ### Changing how the bars look
 
 The bars take their colour from two CSS variables, so a snippet is enough to
