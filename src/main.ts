@@ -424,17 +424,20 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl)
-      .setName("Immersive folder")
-      .setDesc(
-        "Also on the eye button at the top of the file explorer, and on the “Toggle immersive folder” command if you want a hotkey."
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.enabled).onChange(async (value) => {
-          this.plugin.settings.enabled = value;
-          await this.plugin.saveSettings();
-        })
-      );
+    /* Deliberately no on/off switch here. The cover is something you flick
+       while you work, and it already has a button sitting where the work is,
+       plus a command to bind. A third copy buried two menus deep would only
+       be somewhere for the user's idea of the state to drift out of step with
+       the button in front of them. What settings are for is the behaviour
+       below, which you set once and forget. */
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "The cover is switched from the button at the top of the file " +
+        "explorer — three rows with the middle one picked out. It takes on " +
+        "your accent colour while the cover is up. The “Toggle immersive " +
+        "folder” command does the same, if you would rather bind a hotkey.",
+    });
 
     new Setting(containerEl)
       .setName("Show the trail back to the root")
