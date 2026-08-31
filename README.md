@@ -102,10 +102,14 @@ would fight you each time you moved a pane.
 
 ## Installing
 
-Not in the community plugin list yet. To install by hand, copy `main.js`,
-`manifest.json` and `styles.css` into
-`YourVault/.obsidian/plugins/immersive-folder/` and enable it under
-Settings → Community plugins.
+Not in the community plugin list yet. Download `main.js`, `manifest.json`
+and `styles.css` from the [latest
+release](https://github.com/iBlinkQ/immersive-folder/releases/latest), put them
+in `YourVault/.obsidian/plugins/immersive-folder/`, and enable the plugin
+under Settings → Community plugins.
+
+(`main.js` is a build artefact and is not kept in the repository — it exists
+only in the releases, or after you run `npm run build` yourself.)
 
 ## Development
 

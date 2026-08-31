@@ -88,9 +88,13 @@ body {
 
 ## 安装
 
-还没有上架社区插件市场。手动安装：把 `main.js`、`manifest.json` 和 `styles.css`
-复制到 `你的库/.obsidian/plugins/immersive-folder/`，然后在 设置 → 第三方插件
-里启用。
+还没有上架社区插件市场。从 [最新
+release](https://github.com/iBlinkQ/immersive-folder/releases/latest) 下载
+`main.js`、`manifest.json` 和 `styles.css`，放进
+`你的库/.obsidian/plugins/immersive-folder/`，然后在 设置 → 第三方插件 里启用。
+
+（`main.js` 是构建产物，不保存在仓库里 —— 它只存在于 release 中，或者你自己跑
+`npm run build` 之后。）
 
 ## 开发
 
