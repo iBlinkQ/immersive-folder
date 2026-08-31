@@ -360,9 +360,12 @@ export default class ImmersiveFolderPlugin extends Plugin {
     const reveal: string[] = [];
 
     if (folder.isRoot()) {
-      /* Obsidian wraps the top level in an unclassed div for its virtual
-         scroller, so the root's own items sit two levels down. */
-      reveal.push(`${SCOPE} > div > .tree-item > .tree-item-self`);
+      /* A row is at the root when its path has no separator in it. Matching
+         on the path rather than on how deeply the row is nested keeps this
+         working whatever the explorer wraps its top level in — that wrapper
+         has changed before, and a rule built on it would quietly stop
+         matching the day it changes again. */
+      reveal.push(`${SCOPE} .tree-item-self:not([data-path*="/"])`);
     } else {
       const trail = this.settings.revealTrail
         ? ancestry(folder.path)
