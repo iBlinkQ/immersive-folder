@@ -1,5 +1,7 @@
 # Immersive Folder
 
+English · [简体中文](README.zh-CN.md)
+
 An Obsidian plugin. While you are working in a folder, that folder stays
 readable and everything else in the file explorer drops behind skeleton bars.
 
