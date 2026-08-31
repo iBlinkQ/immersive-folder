@@ -9,6 +9,10 @@ The folder is picked automatically from the file you have open — there is
 nothing to select and nothing to remember to turn off when you move on. Open a
 note somewhere else and the bars follow you there.
 
+Custom icons (from [Iconize](https://github.com/FlorianWoelki/obsidian-iconize))
+become placeholder tiles rather than disappearing, so the rows keep their shape
+and the covered list still reads as a list.
+
 ## Why
 
 - **Focus.** A vault of two thousand notes stops competing for attention with

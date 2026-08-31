@@ -196,10 +196,34 @@ ${SCOPE} .tree-item-self .tree-item-inner::after {
 ${SCOPE} .tree-item:nth-child(3n + 1) .tree-item-inner::after { width: 54%; }
 ${SCOPE} .tree-item:nth-child(3n + 2) .tree-item-inner::after { width: 81%; }
 
-/* An icon names a folder as loudly as its label does, and the file-type tag
-   gives away what sort of thing is in there. The collapse arrow stays — it
-   carries no content, and the tree is unusable without it. */
-${SCOPE} .tree-item-self .iconize-icon,
+/* An icon names a folder as loudly as its label does. Blanking it outright
+   leaves a hole where the eye expects something, so the glyph is hidden and a
+   placeholder tile is drawn in its place — the row keeps its shape and reads
+   as covered rather than broken.
+
+   visibility rather than opacity or display: it inherits, so it takes text
+   nodes down with it (Iconize renders emoji icons as bare text, which no
+   child selector can reach), it leaves the box occupying its space, and a
+   pseudo-element can still opt back into being visible.
+
+   The collapse arrow stays — it carries no content, and the tree is unusable
+   without it. */
+${SCOPE} .tree-item-self .iconize-icon {
+  position: relative;
+  visibility: hidden;
+}
+
+${SCOPE} .tree-item-self .iconize-icon::after {
+  content: "";
+  visibility: visible;
+  position: absolute;
+  inset: 1px;
+  border-radius: 3px;
+  background-color: var(--immersive-folder-bar);
+  opacity: var(--immersive-folder-bar-opacity);
+}
+
+/* The file-type tag is a word, so it goes the way the labels do. */
 ${SCOPE} .tree-item-self .nav-file-tag {
   opacity: 0;
 }`;
@@ -209,10 +233,8 @@ ${SCOPE} .tree-item-self .nav-file-tag {
    the cover above it, so it wins on specificity rather than on source order. */
 function revealRules(selectors: string[]): string {
   const inner = selectors.map((s) => `${s} .tree-item-inner`);
-  const icons = selectors.flatMap((s) => [
-    `${s} .iconize-icon`,
-    `${s} .nav-file-tag`,
-  ]);
+  const icons = selectors.map((s) => `${s} .iconize-icon`);
+  const tags = selectors.map((s) => `${s} .nav-file-tag`);
 
   return `${inner.join(",\n")} {
   color: inherit;
@@ -223,6 +245,14 @@ ${inner.map((s) => `${s}::after`).join(",\n")} {
 }
 
 ${icons.join(",\n")} {
+  visibility: visible;
+}
+
+${icons.map((s) => `${s}::after`).join(",\n")} {
+  content: none;
+}
+
+${tags.join(",\n")} {
   opacity: 1;
 }`;
 }
