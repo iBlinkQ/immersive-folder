@@ -9,8 +9,12 @@ body {
 /* The button carries an accent wash while the cover is up. Obsidian's own
    is-active only tints the glyph, which is easy to miss on a toolbar where
    every other button is the same shape — and "is it on right now" is the one
-   question this button exists to answer. */
-.immersive-folder-button.is-active {
+   question this button exists to answer.
+
+   The selector is this long on purpose: Obsidian styles the same state with
+   .nav-buttons-container .nav-action-button.is-active, which outweighs a
+   two-class rule and would win. */
+.nav-buttons-container .nav-action-button.immersive-folder-button.is-active {
   background-color: hsla(var(--interactive-accent-hsl), 0.18);
   color: var(--text-accent);
 }

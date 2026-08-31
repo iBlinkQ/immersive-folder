@@ -50,48 +50,31 @@ const BUTTON_CLASS = "immersive-folder-button";
 const STYLE_ID = "immersive-folder-rules";
 const SCOPE = `.${BODY_CLASS} .nav-files-container`;
 
-const ICON_ON = "immersive-folder-on";
-const ICON_OFF = "immersive-folder-off";
+const ICON = "immersive-folder";
 
 /* The button draws the plugin's own idea rather than a stock glyph: rows of
-   text with one of them brought forward. Off is three plain rows; on drops the
-   outer two back and thickens the middle one, which is the covered list in
-   miniature.
+   text with the middle one carrying the weight while its neighbours fall back.
+   That is the covered list in miniature.
 
-   addIcon draws into a 0 0 100 100 box, and Obsidian's .svg-icon rule sets
-   stroke-width for a 24-unit box, so every stroke states its own width here or
-   it renders hairline-thin. At the ~18px this is displayed at, arrowheads of
-   the kind iA Writer can afford collapse into specks — the weight contrast has
-   to carry the meaning on its own. */
-function registerIcons(): void {
-  const row = (d: string, extra = "") =>
+   The shape does not change between states — only the accent wash behind it
+   does. A drawn-on pair of carets was tried and dropped: at the ~18px a
+   toolbar affords, they crowd the middle row down to a stub and the whole
+   thing reads as one arrow-ish symbol rather than as text. A constant glyph
+   also means switching the cover on never looks like the button turned into a
+   different button.
+
+   addIcon draws into a 0 0 100 100 box while Obsidian's .svg-icon rule sets
+   stroke widths for a 24-unit one, so every stroke states its own width here
+   or it renders hairline-thin. */
+function registerIcon(): void {
+  const row = (d: string, extra: string) =>
     `<path d="${d}" fill="none" stroke="currentColor" stroke-linecap="round" ${extra}/>`;
 
-  /* Off — a plain list with its middle row already carrying the weight, so
-     the button reads as being about one row among many even before you press
-     it. */
   addIcon(
-    ICON_OFF,
+    ICON,
     row("M22 28 H78", 'stroke-width="7" opacity="0.35"') +
       row("M20 50 H80", 'stroke-width="11"') +
       row("M22 72 H78", 'stroke-width="7" opacity="0.35"')
-  );
-
-  /* On — the same list with two carets closing in on that row. They point
-     inward, at the row, the way iA Writer marks its focused line; pointing
-     outward would read as expanding rather than narrowing.
-     The rows pull in to clear a path for the carets, which need every unit of
-     size they can get at this scale. */
-  const caret = (d: string) =>
-    `<path d="${d}" fill="currentColor" stroke="none"/>`;
-
-  addIcon(
-    ICON_ON,
-    row("M26 28 H74", 'stroke-width="7" opacity="0.3"') +
-      row("M38 50 H62", 'stroke-width="11"') +
-      row("M26 72 H74", 'stroke-width="7" opacity="0.3"') +
-      caret("M30 50 L12 37 V63 Z") +
-      caret("M70 50 L88 37 V63 Z")
   );
 }
 
@@ -102,7 +85,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    registerIcons();
+    registerIcon();
 
     this.styleEl = document.head.createEl("style", { attr: { id: STYLE_ID } });
     this.register(() => this.styleEl?.remove());
@@ -303,12 +286,13 @@ export default class ImmersiveFolderPlugin extends Plugin {
         button = bar.createDiv({
           cls: `clickable-icon nav-action-button ${BUTTON_CLASS}`,
         });
+        /* The glyph never changes, so it is drawn once at creation; only the
+           state below is refreshed. */
+        setIcon(button, ICON);
         button.addEventListener("click", () => void this.toggle());
       }
 
       const on = this.settings.enabled;
-      button.empty();
-      setIcon(button, on ? ICON_ON : ICON_OFF);
       /* Tracks the setting, not whether the cover happens to be drawn right
          now: with no file open the cover lifts on its own, and a button that
          flipped itself back to "off" would read as having been switched off

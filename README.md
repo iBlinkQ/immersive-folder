@@ -27,7 +27,8 @@ and the covered list still reads as a list.
 
 ## Using it
 
-- **The eye button** at the top of the file explorer toggles it.
+- **The button** at the top of the file explorer toggles it. It takes on your
+  accent colour while the cover is up, so the state is readable at a glance.
 - **`Immersive Folder: Toggle immersive folder`** does the same from the
   command palette, so you can bind a hotkey — worth doing if you switch it on
   and off around recordings.
