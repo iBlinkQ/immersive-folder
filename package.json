@@ -1,6 +1,6 @@
 {
   "name": "immersive-folder",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Immerse the file explorer in the folder you are working in.",
   "private": true,
   "main": "main.js",

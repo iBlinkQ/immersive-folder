@@ -4,6 +4,7 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  SettingDefinitionItem,
   setIcon,
 } from "obsidian";
 
@@ -44,12 +45,17 @@ interface FileExplorerView {
    `any` — and one `any` here spreads through every folder that gets
    collapsed. Going through unknown means the compiler has nothing to
    propagate, and the check below is what grants the type. */
-/* Object.entries widens to string keys and loses the value type in a lint
-   run without our tsconfig; stating both here keeps every loop below typed. */
+/* Object.entries is typed as returning any[] once the object's own type is
+   not in scope, and that any leaks into every loop below. Object.keys returns
+   string[] whatever the compiler knows, and indexing back in is typed by the
+   Record — so nothing here is ever any. */
 function entriesOf(
   items: Record<string, ExplorerItem>
 ): [string, ExplorerItem][] {
-  return Object.entries(items);
+  return Object.keys(items).map((key): [string, ExplorerItem] => [
+    key,
+    items[key],
+  ]);
 }
 
 function isExplorerView(view: unknown): view is FileExplorerView {
@@ -72,6 +78,8 @@ const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
    adding one object rather than hunting through the file. */
 interface Strings {
   command: string;
+  introName: string;
+  disclaimerName: string;
   ariaOn: string;
   ariaOff: string;
   intro: string;
@@ -91,6 +99,8 @@ const EN: Strings = {
   command: "Toggle immersive folder",
   ariaOn: "Leave immersive folder",
   ariaOff: "Immerse in this folder",
+  introName: "Switching it on",
+  disclaimerName: "What it does not do",
   intro:
     "The cover is switched from the button at the top of the file explorer " +
     "— three rows with the middle one picked out. It takes on your accent " +
@@ -125,6 +135,8 @@ const ZH: Strings = {
   command: "切换沉浸模式",
   ariaOn: "退出沉浸模式",
   ariaOff: "沉浸到当前文件夹",
+  introName: "怎么开关",
+  disclaimerName: "它做不到什么",
   intro:
     "遮挡的开关在文件列表顶部那个按钮上 —— 三行横线、中间一行被挑出来的那个。" +
     "遮挡开启时它会染上你的主题强调色。命令面板里的「切换沉浸模式」是同一个开关，" +
@@ -475,6 +487,84 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
+  /* The declarative form, used from 1.13.0 on. Returning a non-empty array
+     means display() below is never called — it stays only because
+     minAppVersion is 1.12.0, where this method does not exist yet and the
+     imperative path is the only one there is. Both are built from the same
+     string table, so they cannot drift apart in wording. */
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    const t = this.plugin.t;
+    return [
+      /* Prose rows rather than loose paragraphs: a definition needs a name,
+         and giving these one puts them in the settings search, where someone
+         hunting for "hotkey" or "privacy" has a chance of meeting them. */
+      { name: t.introName, desc: t.intro },
+      {
+        name: t.language,
+        desc: t.languageDesc,
+        control: {
+          type: "dropdown",
+          key: "language",
+          options: { auto: t.languageAuto, en: "English", zh: "简体中文" },
+        },
+      },
+      {
+        name: t.trail,
+        desc: t.trailDesc,
+        control: { type: "toggle", key: "revealTrail" },
+      },
+      {
+        name: t.keepInView,
+        desc: t.keepInViewDesc,
+        control: { type: "toggle", key: "keepActiveInView" },
+      },
+      {
+        name: t.collapse,
+        desc: t.collapseDesc,
+        control: { type: "toggle", key: "collapseOthers" },
+      },
+      { name: t.disclaimerName, desc: t.disclaimer },
+    ];
+  }
+
+  /* Spread into a Record rather than indexed directly: the settings object is
+     keyed by a union of literals, and a bare string index would not compile
+     against it. */
+  getControlValue(key: string): unknown {
+    const settings: Record<string, unknown> = { ...this.plugin.settings };
+    return settings[key];
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const plugin = this.plugin;
+    switch (key) {
+      case "language":
+        plugin.settings.language = value as Language;
+        await plugin.saveSettings();
+        /* Every label on this page, and the command's name, came from the
+           language that just changed. */
+        plugin.registerToggleCommand();
+        this.update();
+        return;
+      case "collapseOthers":
+        /* Folding and unfolding the tree is a side effect, not just a stored
+           flag, so this one goes through the plugin rather than being
+           written here. */
+        await plugin.applyCollapseOthers(Boolean(value));
+        return;
+      case "revealTrail":
+        plugin.settings.revealTrail = Boolean(value);
+        break;
+      case "keepActiveInView":
+        plugin.settings.keepActiveInView = Boolean(value);
+        break;
+      default:
+        return;
+    }
+    await plugin.saveSettings();
+  }
+
+  /* Fallback for 1.12.x. Kept in step with getSettingDefinitions() above. */
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
