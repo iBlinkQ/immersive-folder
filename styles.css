@@ -1,7 +1,12 @@
-/* The bar takes a theme variable rather than a fixed colour, so the veil sits
-   native in whatever theme is running. Override either of these in a CSS
-   snippet to pitch the bars to your own palette. */
+/* Everything the plugin paints lives here rather than in a stylesheet built
+   at runtime. The rules cannot know which folder is focused, so they do not
+   try: they cover every row, and JavaScript marks the rows that should stay
+   readable with .immersive-folder-reveal. Each reveal rule below carries one
+   class more than the cover rule it answers, so it wins on specificity and
+   not on source order. */
+
 body {
+  /* Override either of these in a snippet to pitch the bars to your theme. */
   --immersive-folder-bar: var(--background-modifier-border);
   --immersive-folder-bar-opacity: 1;
 }
@@ -17,4 +22,103 @@ body {
 .nav-buttons-container .nav-action-button.immersive-folder-button.is-active {
   background-color: hsla(var(--interactive-accent-hsl), 0.18);
   color: var(--text-accent);
+}
+
+/* ── The cover ─────────────────────────────────────────────────────────── */
+
+.immersive-folder-on .nav-files-container .tree-item-self .tree-item-inner {
+  position: relative;
+  color: transparent;
+}
+
+.immersive-folder-on .nav-files-container .tree-item-self .tree-item-inner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 0.6em;
+  width: 68%;
+  max-width: 9em;
+  border-radius: 2px;
+  background-color: var(--immersive-folder-bar);
+  opacity: var(--immersive-folder-bar-opacity);
+}
+
+/* Three widths, so a column of bars reads as a list rather than a barcode.
+   The name still sets the row's width, but it is transparent by then, so its
+   length is not on show. */
+.immersive-folder-on .nav-files-container .tree-item:nth-child(3n + 1) .tree-item-inner::after {
+  width: 54%;
+}
+
+.immersive-folder-on .nav-files-container .tree-item:nth-child(3n + 2) .tree-item-inner::after {
+  width: 81%;
+}
+
+/* An icon names a folder as loudly as its label does. Blanking it outright
+   leaves a hole where the eye expects something, so the glyph is hidden and a
+   placeholder tile is drawn in its place — the row keeps its shape and reads
+   as covered rather than broken.
+
+   visibility rather than opacity or display: it inherits, so it takes text
+   nodes down with it (Iconize renders emoji icons as bare text, which no
+   child selector can reach), it leaves the box occupying its space, and a
+   pseudo-element can still opt back into being visible. */
+.immersive-folder-on .nav-files-container .tree-item-self .iconize-icon {
+  position: relative;
+  visibility: hidden;
+}
+
+.immersive-folder-on .nav-files-container .tree-item-self .iconize-icon::after {
+  content: "";
+  visibility: visible;
+  position: absolute;
+  inset: 1px;
+  border-radius: 3px;
+  background-color: var(--immersive-folder-bar);
+  opacity: var(--immersive-folder-bar-opacity);
+}
+
+/* The file-type tag is a word, so it goes the way the labels do. The collapse
+   arrow stays — it carries no content, and the tree is unusable without it. */
+.immersive-folder-on .nav-files-container .tree-item-self .nav-file-tag {
+  opacity: 0;
+}
+
+/* ── The rows it spares ────────────────────────────────────────────────── */
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-reveal
+  .tree-item-inner {
+  color: inherit;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-reveal
+  .tree-item-inner::after {
+  content: none;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-reveal
+  .iconize-icon {
+  visibility: visible;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-reveal
+  .iconize-icon::after {
+  content: none;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-reveal
+  .nav-file-tag {
+  opacity: 1;
 }

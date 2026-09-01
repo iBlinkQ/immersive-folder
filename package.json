@@ -1,6 +1,6 @@
 {
   "name": "immersive-folder",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Immerse the file explorer in the folder you are working in.",
   "private": true,
   "main": "main.js",
@@ -15,7 +15,6 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.25.0",
     "obsidian": "latest",
     "tslib": "^2.8.0",

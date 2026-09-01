@@ -38,6 +38,26 @@ interface FileExplorerView {
   fileItems: Record<string, ExplorerItem>;
 }
 
+/* Narrowed from unknown rather than asserted from a view type: an assertion
+   would hand every later property access whatever the compiler happens to
+   know about a leaf's view, which in a lint run without Obsidian's types is
+   `any` — and one `any` here spreads through every folder that gets
+   collapsed. Going through unknown means the compiler has nothing to
+   propagate, and the check below is what grants the type. */
+/* Object.entries widens to string keys and loses the value type in a lint
+   run without our tsconfig; stating both here keeps every loop below typed. */
+function entriesOf(
+  items: Record<string, ExplorerItem>
+): [string, ExplorerItem][] {
+  return Object.entries(items);
+}
+
+function isExplorerView(view: unknown): view is FileExplorerView {
+  if (typeof view !== "object" || view === null) return false;
+  const items = (view as { fileItems?: unknown }).fileItems;
+  return typeof items === "object" && items !== null;
+}
+
 const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   language: "auto",
   enabled: false,
@@ -144,8 +164,10 @@ function stringsFor(language: Language): Strings {
    cover is a single class away and can never leave half-covered rows behind. */
 const BODY_CLASS = "immersive-folder-on";
 const BUTTON_CLASS = "immersive-folder-button";
-const STYLE_ID = "immersive-folder-rules";
-const SCOPE = `.${BODY_CLASS} .nav-files-container`;
+/* Marks a row the cover should spare. Set from here, matched in styles.css:
+   the rules there cannot know which folder is focused, so they cover
+   everything and let this class carve out the exceptions. */
+const REVEAL_CLASS = "immersive-folder-reveal";
 
 const ICON = "immersive-folder";
 
@@ -177,16 +199,20 @@ function registerIcon(): void {
 
 export default class ImmersiveFolderPlugin extends Plugin {
   settings: ImmersiveFolderSettings = { ...DEFAULT_SETTINGS };
-  private styleEl: HTMLStyleElement | null = null;
   private lastSyncedPath: string | null = null;
+  /* Null while the cover is down. An empty string means the vault root. */
+  private focusPath: string | null = null;
+  /* The explorer builds and discards rows as you scroll, so a row can turn up
+     at any moment and has to arrive already marked. */
+  private readonly observer = new MutationObserver(() => this.applyMarks());
 
   async onload(): Promise<void> {
     await this.loadSettings();
     registerIcon();
 
-    this.styleEl = document.head.createEl("style", { attr: { id: STYLE_ID } });
-    this.register(() => this.styleEl?.remove());
     this.register(() => document.body.removeClass(BODY_CLASS));
+    this.register(() => this.observer.disconnect());
+    this.register(() => this.clearMarks());
     this.register(() => this.removeButtons());
 
     this.registerToggleCommand();
@@ -269,13 +295,72 @@ export default class ImmersiveFolderPlugin extends Plugin {
   }
 
   private redraw(): void {
-    const rules = this.buildRules();
-    /* An empty sheet is the safe state: no bars, no gaps, the explorer
-       exactly as the theme drew it. */
-    document.body.toggleClass(BODY_CLASS, rules !== "");
-    if (this.styleEl) this.styleEl.textContent = rules;
+    const folder = this.settings.enabled
+      ? this.app.workspace.getActiveFile()?.parent
+      : undefined;
+
+    /* Nothing open means no folder to focus on. Covering the lot would leave
+       a column of anonymous bars with no way to navigate out of it, so the
+       cover lifts itself until something is open again. No focus, no body
+       class: the explorer is exactly as the theme drew it. */
+    this.focusPath = folder ? (folder.isRoot() ? "" : folder.path) : null;
+
+    document.body.toggleClass(BODY_CLASS, this.focusPath !== null);
+    this.observeExplorer();
+    this.applyMarks();
     this.syncButtons();
     this.syncExplorer();
+  }
+
+  private observeExplorer(): void {
+    for (const container of Array.from(
+      document.querySelectorAll(".nav-files-container")
+    )) {
+      /* childList only. Marking a row sets a class, and watching attributes
+         as well would make every pass schedule another one. Re-observing a
+         container it already watches is harmless. */
+      this.observer.observe(container, { childList: true, subtree: true });
+    }
+  }
+
+  private applyMarks(): void {
+    const focus = this.focusPath;
+    for (const row of Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".nav-files-container .tree-item-self[data-path]"
+      )
+    )) {
+      const path = row.getAttribute("data-path");
+      row.toggleClass(
+        REVEAL_CLASS,
+        focus !== null && path !== null && this.spares(path, focus)
+      );
+    }
+  }
+
+  private clearMarks(): void {
+    for (const row of Array.from(
+      document.querySelectorAll<HTMLElement>(`.${REVEAL_CLASS}`)
+    )) {
+      row.removeClass(REVEAL_CLASS);
+    }
+  }
+
+  /* Which rows keep their real name: the focused folder itself, the trail
+     back to the root when asked for, and the folder's direct children — one
+     segment further down and no deeper. Comparing paths rather than walking
+     the DOM means a row is judged the moment it is created, however the
+     explorer chose to nest it. */
+  private spares(path: string, focus: string): boolean {
+    /* Focused on the vault root: its own rows are the ones with no separator
+       anywhere in their path. */
+    if (focus === "") return !path.includes("/");
+    if (path === focus) return true;
+    if (focus.startsWith(`${path}/`)) return this.settings.revealTrail;
+    if (path.startsWith(`${focus}/`)) {
+      return !path.slice(focus.length + 1).includes("/");
+    }
+    return false;
   }
 
   /* The shape of the tree follows the active file: fold away what you are not
@@ -307,7 +392,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
      later shows up as a flicker. */
   private collapseAway(keep: string | undefined): void {
     for (const view of this.explorerViews()) {
-      for (const [path, item] of Object.entries(view.fileItems)) {
+      for (const [path, item] of entriesOf(view.fileItems)) {
         if (!item.collapsible || item.collapsed) continue;
         if (keep && (keep === path || keep.startsWith(`${path}/`))) continue;
         item.setCollapsed(true);
@@ -318,7 +403,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
   private captureExpanded(): void {
     const open: string[] = [];
     for (const view of this.explorerViews()) {
-      for (const [path, item] of Object.entries(view.fileItems)) {
+      for (const [path, item] of entriesOf(view.fileItems)) {
         if (item.collapsible && !item.collapsed) open.push(path);
       }
     }
@@ -328,7 +413,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
   private restoreExpanded(): void {
     const wanted = new Set(this.settings.expandedBefore);
     for (const view of this.explorerViews()) {
-      for (const [path, item] of Object.entries(view.fileItems)) {
+      for (const [path, item] of entriesOf(view.fileItems)) {
         if (item.collapsible && item.collapsed && wanted.has(path)) {
           item.setCollapsed(false);
         }
@@ -339,51 +424,9 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
   private *explorerViews(): Generator<FileExplorerView> {
     for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
-      const view = leaf.view as unknown as FileExplorerView | undefined;
-      if (view && typeof view.fileItems === "object" && view.fileItems) {
-        yield view;
-      }
+      const view: unknown = leaf.view;
+      if (isExplorerView(view)) yield view;
     }
-  }
-
-  private buildRules(): string {
-    if (!this.settings.enabled) return "";
-
-    const folder = this.app.workspace.getActiveFile()?.parent;
-    /* Nothing open means no folder to focus on. Covering the lot would leave a
-       column of anonymous bars with no way to navigate out of it, so the cover
-       lifts itself until something is open again. The same branch covers the
-       case where the active row has been recycled out of the DOM. */
-    if (!folder) return "";
-
-    /* Rows whose real name survives the cover. */
-    const reveal: string[] = [];
-
-    if (folder.isRoot()) {
-      /* A row is at the root when its path has no separator in it. Matching
-         on the path rather than on how deeply the row is nested keeps this
-         working whatever the explorer wraps its top level in — that wrapper
-         has changed before, and a rule built on it would quietly stop
-         matching the day it changes again. */
-      reveal.push(`${SCOPE} .tree-item-self:not([data-path*="/"])`);
-    } else {
-      const trail = this.settings.revealTrail
-        ? ancestry(folder.path)
-        : [folder.path];
-      for (const path of trail) {
-        reveal.push(`${SCOPE} .nav-folder-title[data-path=${quote(path)}]`);
-      }
-      /* A folder's title row and its list of children are siblings, and that
-         is what lets this skip :has() altogether — along with the specificity
-         fight against the cover, and any dependence on the active file's own
-         row still being rendered. */
-      reveal.push(
-        `${SCOPE} .nav-folder-title[data-path=${quote(folder.path)}]` +
-          ` ~ .nav-folder-children > .tree-item > .tree-item-self`
-      );
-    }
-
-    return `${skeletonRules()}\n\n${revealRules(reveal)}`;
   }
 
   private syncButtons(): void {
@@ -427,106 +470,6 @@ export default class ImmersiveFolderPlugin extends Plugin {
 }
 
 /* The cover itself — one bar per row, drawn over a transparent label. */
-function skeletonRules(): string {
-  return `${SCOPE} .tree-item-self .tree-item-inner {
-  position: relative;
-  color: transparent;
-}
-
-${SCOPE} .tree-item-self .tree-item-inner::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 0.6em;
-  width: 68%;
-  max-width: 9em;
-  border-radius: 2px;
-  background-color: var(--immersive-folder-bar);
-  opacity: var(--immersive-folder-bar-opacity);
-}
-
-/* Three widths, so a column of bars reads as a list rather than a barcode.
-   The name still sets the row's width, but it is transparent by then, so its
-   length is not on show. */
-${SCOPE} .tree-item:nth-child(3n + 1) .tree-item-inner::after { width: 54%; }
-${SCOPE} .tree-item:nth-child(3n + 2) .tree-item-inner::after { width: 81%; }
-
-/* An icon names a folder as loudly as its label does. Blanking it outright
-   leaves a hole where the eye expects something, so the glyph is hidden and a
-   placeholder tile is drawn in its place — the row keeps its shape and reads
-   as covered rather than broken.
-
-   visibility rather than opacity or display: it inherits, so it takes text
-   nodes down with it (Iconize renders emoji icons as bare text, which no
-   child selector can reach), it leaves the box occupying its space, and a
-   pseudo-element can still opt back into being visible.
-
-   The collapse arrow stays — it carries no content, and the tree is unusable
-   without it. */
-${SCOPE} .tree-item-self .iconize-icon {
-  position: relative;
-  visibility: hidden;
-}
-
-${SCOPE} .tree-item-self .iconize-icon::after {
-  content: "";
-  visibility: visible;
-  position: absolute;
-  inset: 1px;
-  border-radius: 3px;
-  background-color: var(--immersive-folder-bar);
-  opacity: var(--immersive-folder-bar-opacity);
-}
-
-/* The file-type tag is a word, so it goes the way the labels do. */
-${SCOPE} .tree-item-self .nav-file-tag {
-  opacity: 0;
-}`;
-}
-
-/* …and the rows it spares. Each selector below carries more class-units than
-   the cover above it, so it wins on specificity rather than on source order. */
-function revealRules(selectors: string[]): string {
-  const inner = selectors.map((s) => `${s} .tree-item-inner`);
-  const icons = selectors.map((s) => `${s} .iconize-icon`);
-  const tags = selectors.map((s) => `${s} .nav-file-tag`);
-
-  return `${inner.join(",\n")} {
-  color: inherit;
-}
-
-${inner.map((s) => `${s}::after`).join(",\n")} {
-  content: none;
-}
-
-${icons.join(",\n")} {
-  visibility: visible;
-}
-
-${icons.map((s) => `${s}::after`).join(",\n")} {
-  content: none;
-}
-
-${tags.join(",\n")} {
-  opacity: 1;
-}`;
-}
-
-/* "a/b/c" → ["a", "a/b", "a/b/c"] — the folder and every folder above it. */
-function ancestry(path: string): string[] {
-  const parts = path.split("/");
-  return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
-}
-
-/* data-path holds whatever the user named the folder, quotes and backslashes
-   included. JSON's string escaping is a subset of CSS's and covers both; a
-   name cannot contain a newline, which is the one case where they differ. */
-function quote(value: string): string {
-  return JSON.stringify(value);
-}
-
 class ImmersiveFolderSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: ImmersiveFolderPlugin) {
     super(app, plugin);
