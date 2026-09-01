@@ -7,6 +7,11 @@ on:
 
 permissions:
   contents: write
+  # Provenance is signed with a short-lived OIDC token, and the resulting
+  # attestation is written back to the repository. Neither is granted by
+  # default, and the attest step fails without both.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -34,6 +39,19 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match manifest version $MANIFEST_VERSION"
             exit 1
           fi
+
+      # Signs a statement that these files came out of this workflow, from this
+      # commit. Anyone can then check a downloaded asset against it with
+      # `gh attestation verify main.js --repo iBlinkQ/immersive-folder`.
+      # Only the two build artefacts are attested: manifest.json ships to the
+      # release exactly as it sits in the repository, so its provenance is
+      # already the commit history.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            styles.css
 
       - name: Create release
         env:
