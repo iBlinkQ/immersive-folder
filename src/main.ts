@@ -3,7 +3,6 @@ import {
   App,
   Plugin,
   PluginSettingTab,
-  Setting,
   SettingDefinitionItem,
   setIcon,
 } from "obsidian";
@@ -487,11 +486,10 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
-  /* The declarative form, used from 1.13.0 on. Returning a non-empty array
-     means display() below is never called — it stays only because
-     minAppVersion is 1.12.0, where this method does not exist yet and the
-     imperative path is the only one there is. Both are built from the same
-     string table, so they cannot drift apart in wording. */
+  /* The tab describes itself rather than drawing itself, which is what puts
+     its rows into Obsidian's settings search. There is no imperative
+     fallback: update() below is 1.13.0 API, so the manifest asks for 1.13.0
+     and every install that can run this plugin can render this. */
   getSettingDefinitions(): SettingDefinitionItem[] {
     const t = this.plugin.t;
     return [
@@ -562,82 +560,5 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         return;
     }
     await plugin.saveSettings();
-  }
-
-  /* Fallback for 1.12.x. Kept in step with getSettingDefinitions() above. */
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-    const t = this.plugin.t;
-
-    /* Deliberately no on/off switch here. The cover is something you flick
-       while you work, and it already has a button sitting where the work is,
-       plus a command to bind. A third copy buried two menus deep would only
-       be somewhere for the user's idea of the state to drift out of step with
-       the button in front of them. What settings are for is the behaviour
-       below, which you set once and forget. */
-    containerEl.createEl("p", {
-      cls: "setting-item-description",
-      text: t.intro,
-    });
-
-    /* First, and not last: someone who cannot read the rest of this page is
-       exactly the person who needs to find this row. */
-    new Setting(containerEl)
-      .setName(t.language)
-      .setDesc(t.languageDesc)
-      .addDropdown((drop) =>
-        drop
-          .addOption("auto", t.languageAuto)
-          .addOption("en", "English")
-          .addOption("zh", "简体中文")
-          .setValue(this.plugin.settings.language)
-          .onChange(async (value) => {
-            this.plugin.settings.language = value as Language;
-            await this.plugin.saveSettings();
-            /* The command name is fixed at registration, so it has to be
-               registered again to follow the new language. */
-            this.plugin.registerToggleCommand();
-            this.display();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t.trail)
-      .setDesc(t.trailDesc)
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.revealTrail)
-          .onChange(async (value) => {
-            this.plugin.settings.revealTrail = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t.keepInView)
-      .setDesc(t.keepInViewDesc)
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.keepActiveInView)
-          .onChange(async (value) => {
-            this.plugin.settings.keepActiveInView = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t.collapse)
-      .setDesc(t.collapseDesc)
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.collapseOthers)
-          .onChange((value) => void this.plugin.applyCollapseOthers(value))
-      );
-
-    containerEl.createEl("p", {
-      cls: "setting-item-description",
-      text: t.disclaimer,
-    });
   }
 }

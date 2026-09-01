@@ -1,8 +1,8 @@
 {
   "id": "immersive-folder",
   "name": "Immersive Folder",
-  "version": "0.2.3",
-  "minAppVersion": "1.12.0",
+  "version": "0.2.4",
+  "minAppVersion": "1.13.0",
   "description": "Keeps the folder you are working in readable and covers every other file and folder with skeleton bars.",
   "author": "iBlinkQ",
   "authorUrl": "https://github.com/iBlinkQ",
