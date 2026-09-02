@@ -24,6 +24,14 @@ body {
   color: var(--text-accent);
 }
 
+/* Immersive mode and arrange mode take turns, and whichever is off dims while
+   the other is on. Still clickable on purpose: clicking it says which mode is
+   in the way, and a control that dims *and* goes dead reads as broken rather
+   than as waiting its turn. */
+.nav-buttons-container .nav-action-button.immersive-folder-blocked {
+  opacity: 0.4;
+}
+
 /* ── The cover ─────────────────────────────────────────────────────────── */
 
 .immersive-folder-on .nav-files-container .tree-item-self .tree-item-inner {
@@ -121,4 +129,196 @@ body {
   .tree-item-self.immersive-folder-reveal
   .nav-file-tag {
   opacity: 1;
+}
+
+/* ── Arrange mode ──────────────────────────────────────────────────────── */
+
+body {
+  /* All four follow the theme and can be pitched from a snippet, the same way
+     the bars above can. The drop line takes the accent picked in Appearance
+     rather than --interactive-accent, which some themes retune as a button
+     fill: this is an indicator line, not a control surface. */
+  --immersive-folder-drop-line: var(--color-accent);
+  --immersive-folder-drag-bg: var(--background-modifier-active-hover);
+  --immersive-folder-handle: var(--text-muted);
+  --immersive-folder-dim: 0.32;
+
+  /* Six dots — the "grab here" symbol. It can afford to be literal now: in
+     arrange mode the handle is always on screen, so it answers "can this be
+     picked up" before you try, which is exactly what the shape means. */
+  --immersive-folder-grip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Ccircle cx='9' cy='5' r='1.7'/%3E%3Ccircle cx='9' cy='12' r='1.7'/%3E%3Ccircle cx='9' cy='19' r='1.7'/%3E%3Ccircle cx='15' cy='5' r='1.7'/%3E%3Ccircle cx='15' cy='12' r='1.7'/%3E%3Ccircle cx='15' cy='19' r='1.7'/%3E%3C/svg%3E");
+}
+
+/* ── The handle ────────────────────────────────────────────────────────── */
+
+/* On a folder row this is the collapse arrow's own element, borrowed for the
+   duration; on a file row it is one created to match. Either way the arrow's
+   glyph is hidden and the dots are drawn in its place, which is why the two
+   line up in the same column at any indentation. */
+.immersive-folder-handle > svg {
+  display: none;
+}
+
+.immersive-folder-handle::after {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask-image: var(--immersive-folder-grip);
+  mask-image: var(--immersive-folder-grip);
+  -webkit-mask-size: 15px;
+  mask-size: 15px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* The selector is this long deliberately: themes dim the collapse arrow
+   through rules like .nav-files-container .tree-item-self .collapse-icon, and
+   a bare class loses to them on specificity. */
+.nav-files-container .tree-item-self .immersive-folder-handle,
+.nav-files-container .tree-item-self .collapse-icon.immersive-folder-handle {
+  opacity: 1;
+  color: var(--immersive-folder-handle);
+}
+
+/* ── The mode ──────────────────────────────────────────────────────────── */
+
+/* Every row drifts while the mode is on. One row moving would read as a
+   hover state; the whole column moving reads as "this list is being
+   arranged", which is the thing that needs saying. */
+/* The `translate` property rather than a transform: the settle animation
+   after a drop uses `transform`, and keeping them on separate properties lets
+   the two compose instead of overwriting each other — so a row can slide to
+   its new place without the idle drift having to stop. */
+@keyframes immersive-folder-drift {
+  0%,
+  100% {
+    translate: 0 -1px;
+  }
+  50% {
+    translate: 0 1px;
+  }
+}
+
+/* Keyed off the attribute the drag code puts on the rows it accepts, rather
+   than off Obsidian's own .nav-folder-title: the two say the same thing today,
+   but only one of them is ours to rely on. Folders drift, files do not — so
+   "files are not part of this" is answered before anyone tries to drag one. */
+.immersive-folder-sorting .tree-item-self[data-immersive-folder-hint] {
+  animation: immersive-folder-drift 1.2s ease-in-out infinite;
+  cursor: grab;
+}
+
+/* Neighbours drift out of step. In lockstep the whole column looks like it is
+   glitching rather than floating. */
+.immersive-folder-sorting
+  .tree-item:nth-child(3n + 2)
+  > .tree-item-self[data-immersive-folder-hint] {
+  animation-delay: -0.4s;
+}
+
+.immersive-folder-sorting
+  .tree-item:nth-child(3n)
+  > .tree-item-self[data-immersive-folder-hint] {
+  animation-delay: -0.8s;
+}
+
+/* The files, while the mode is on. Dimmed so the folders read as the layer
+   being worked on, and inert so they do not light up under the pointer —
+   a row that highlights on hover is promising something it will not do. The
+   click and context-menu suppression in dnd.ts covers the same ground from
+   the other side; this is what makes it visible. */
+.immersive-folder-sorting
+  .tree-item-self:not([data-immersive-folder-hint]) {
+  opacity: var(--immersive-folder-dim);
+  pointer-events: none;
+  cursor: default;
+}
+
+/* ── While a row is held ───────────────────────────────────────────────── */
+
+/* Everything holds still the moment a row is picked up. The drift says "this
+   list can be rearranged", which is a thing to say before you are holding
+   anything; once you are, what has to be readable is the drop line — and a
+   line worked out from rows that are moving a pixel of their own accord is a
+   line that will not sit still.
+
+   Measured while dragging: the midline the before/after test uses swept
+   through a 2px band twice a second, so a stationary pointer near it flipped
+   the line above and below the same folder; and neighbouring rows, drifting
+   out of phase by design, opened gaps of up to 3.2px between them where the
+   pointer was over no row at all and the line blinked out entirely. */
+/* The selector carries the container class and the attribute on purpose. The
+   drift rule above is .immersive-folder-sorting .tree-item-self[hint] — three
+   selectors — and a two-selector rule loses to it however late it is written,
+   which is exactly what happened: the rows went on drifting through every
+   drag and the line went on flickering. */
+.nav-files-container.immersive-folder-sorting-drag
+  .tree-item-self[data-immersive-folder-hint] {
+  animation: none;
+}
+
+/* Rows that cannot take what you are holding dim, so where it may go is
+   something you see rather than something you find out by trying. Reordering
+   is always among siblings, and after this there is no need to remember that
+   — the screen says so. */
+.immersive-folder-sorting-drag
+  .tree-item-self:not(.immersive-folder-drop-target):not(
+    .immersive-folder-dragging
+  ) {
+  opacity: var(--immersive-folder-dim);
+  cursor: default;
+}
+
+.nav-files-container .tree-item-self.immersive-folder-dragging {
+  background-color: var(--immersive-folder-drag-bg);
+  cursor: grabbing;
+}
+
+/* Fading has to land on the contents, never on the row: opacity on the row
+   itself would take the background down with it, and the two signals would
+   cancel each other out. Kept light — you still need to read what you are
+   holding. The handle is deliberately absent from this list; it stays at full
+   strength as the row fades. */
+.nav-files-container .tree-item-self.immersive-folder-dragging
+  :is(.tree-item-inner, .iconize-icon, .nav-file-tag) {
+  opacity: 0.78;
+}
+
+/* ── Where it would land ───────────────────────────────────────────────── */
+
+/* On the .tree-item, which wraps a folder together with its children, so
+   "after" draws below the whole subtree — at the place the row will actually
+   end up. On the title row instead, the line would fall between a folder and
+   its first child and read as "into this folder". */
+.nav-files-container .tree-item[data-immersive-folder-drop] {
+  position: relative;
+}
+
+.nav-files-container .tree-item[data-immersive-folder-drop]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background-color: var(--immersive-folder-drop-line);
+  pointer-events: none;
+}
+
+.nav-files-container .tree-item[data-immersive-folder-drop="before"]::after {
+  top: -1px;
+}
+
+.nav-files-container .tree-item[data-immersive-folder-drop="after"]::after {
+  bottom: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .immersive-folder-sorting .tree-item-self[data-immersive-folder-hint] {
+    animation: none;
+  }
 }

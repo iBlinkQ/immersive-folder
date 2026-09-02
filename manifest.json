@@ -3,7 +3,7 @@
   "name": "Immersive Folder",
   "version": "0.2.4",
   "minAppVersion": "1.13.0",
-  "description": "Keeps the folder you are working in readable and covers every other file and folder with skeleton bars.",
+  "description": "Covers every folder but the one you are working in with skeleton bars, and lets you arrange the folders by hand.",
   "author": "iBlinkQ",
   "authorUrl": "https://github.com/iBlinkQ",
   "isDesktopOnly": false

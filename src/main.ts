@@ -1,11 +1,26 @@
 import {
   addIcon,
   App,
+  Notice,
   Plugin,
   PluginSettingTab,
   SettingDefinitionItem,
   setIcon,
+  TFolder,
 } from "obsidian";
+
+/* The explorer's own insides — declared and runtime-checked in one place. */
+import {
+  entriesOf,
+  FileExplorerView,
+  FileTreeItem,
+  isExplorerView,
+  patchSorting,
+  SortPatch,
+  sortView,
+} from "./explorer-api";
+import { Orders, OrderStore } from "./order";
+import { animateReorder, DragSort } from "./dnd";
 
 type Language = "auto" | "en" | "zh";
 
@@ -18,49 +33,15 @@ interface ImmersiveFolderSettings {
   /* Which folders were open before the tree was folded down, so leaving
      immersive mode can hand the explorer back the way it was found. */
   expandedBefore: string[];
+  /* Keyed by folder path, holding that folder's *subfolders* in the order the
+     user arranged them. Only folders that have been dragged in appear here,
+     and files never appear at all — see order.ts. */
+  orders: Orders;
 }
 
 /* app.commands is real but absent from the public typings. */
 interface AppWithCommands {
   commands: { executeCommandById(id: string): boolean };
-}
-
-/* So is the explorer's own map of rows. Everything that touches it goes
-   through explorerViews(), which checks before handing one over: a future
-   Obsidian could rename this, and the cover has to keep working if it does. */
-interface ExplorerItem {
-  collapsible: boolean;
-  collapsed: boolean;
-  setCollapsed(value: boolean): void;
-}
-
-interface FileExplorerView {
-  fileItems: Record<string, ExplorerItem>;
-}
-
-/* Narrowed from unknown rather than asserted from a view type: an assertion
-   would hand every later property access whatever the compiler happens to
-   know about a leaf's view, which in a lint run without Obsidian's types is
-   `any` — and one `any` here spreads through every folder that gets
-   collapsed. Going through unknown means the compiler has nothing to
-   propagate, and the check below is what grants the type. */
-/* Object.entries is typed as returning any[] once the object's own type is
-   not in scope, and that any leaks into every loop below. Object.keys returns
-   string[] whatever the compiler knows, and indexing back in is typed by the
-   Record — so nothing here is ever any. */
-function entriesOf(
-  items: Record<string, ExplorerItem>
-): [string, ExplorerItem][] {
-  return Object.keys(items).map((key): [string, ExplorerItem] => [
-    key,
-    items[key],
-  ]);
-}
-
-function isExplorerView(view: unknown): view is FileExplorerView {
-  if (typeof view !== "object" || view === null) return false;
-  const items = (view as { fileItems?: unknown }).fileItems;
-  return typeof items === "object" && items !== null;
 }
 
 const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
@@ -70,6 +51,7 @@ const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   keepActiveInView: true,
   collapseOthers: true,
   expandedBefore: [],
+  orders: {},
 };
 
 
@@ -92,6 +74,16 @@ interface Strings {
   collapse: string;
   collapseDesc: string;
   disclaimer: string;
+  dragName: string;
+  dragIntro: string;
+  sortModeOn: string;
+  sortModeOff: string;
+  sortCommand: string;
+  dragHint: string;
+  /* The two modes take turns, and each refusal says which one is in the way. */
+  blockedBySort: string;
+  blockedByCover: string;
+  sortUnavailable: string;
 }
 
 const EN: Strings = {
@@ -128,6 +120,27 @@ const EN: Strings = {
     "Immersive folder is a visual cover, not encryption. It is built for " +
     "screen sharing, recordings and the person sitting next to you — the " +
     "names are still in the page for anyone with developer tools.",
+  dragName: "Arranging the folders by hand",
+  dragIntro:
+    "The grip button at the top of the file explorer switches on folder " +
+    "arrange mode. Every folder grows a handle and starts to drift, and " +
+    "dragging one sets where it sits among its sibling folders — hold one " +
+    "and only the folders that can take it keep moving, while the rest dim. " +
+    "Files are left out of it entirely: they grow no handle and stay exactly " +
+    "where the sort menu put them, so switching between name and date still " +
+    "does what it always did. Ordinary dragging is untouched too — switch " +
+    "the mode off and moving a note into another folder works as before. " +
+    "This only ever reorders, and never moves anything. Immersive mode and " +
+    "arrange mode take turns: leave one to open the other.",
+  sortModeOff: "Arrange the folders",
+  sortModeOn: "Done arranging",
+  sortCommand: "Toggle folder arrange mode",
+  dragHint: "Drag to reorder",
+  blockedBySort: "Leave folder arrange mode first",
+  blockedByCover: "Leave immersive folder first",
+  sortUnavailable:
+    "This build of Obsidian does not expose the file explorer's sorting, so " +
+    "the folders cannot be arranged.",
 };
 
 const ZH: Strings = {
@@ -159,10 +172,29 @@ const ZH: Strings = {
   disclaimer:
     "沉浸模式是视觉遮挡，不是加密。它是为投屏、录屏和你旁边那个人准备的 —— " +
     "那些名字仍然在页面里，任何人打开开发者工具都能读到。",
+  dragName: "手动排列文件夹",
+  dragIntro:
+    "文件列表顶部那个六点按钮打开「调整文件夹顺序」模式。每个文件夹都会长出手柄并" +
+    "轻轻浮动，拖动它就能决定它排在同级文件夹中间的哪个位置 —— 按住其中一个时，" +
+    "只有能接住它的同级文件夹继续浮动，其余会变暗。文件完全不参与：它们不会长出手柄，" +
+    "始终待在排序菜单给它们的位置上，所以按文件名或按时间排序照样是原来的效果。" +
+    "平时的拖拽也完全没变，关掉这个模式，把笔记拖进别的文件夹和以前一模一样。" +
+    "本插件只调顺序，绝不移动任何东西。沉浸模式和调整顺序模式轮流使用，" +
+    "要开一个得先关掉另一个。",
+  sortModeOff: "调整文件夹顺序",
+  sortModeOn: "完成调整",
+  sortCommand: "切换调整文件夹顺序模式",
+  dragHint: "拖动调整排序",
+  blockedBySort: "请先退出「调整文件夹顺序」模式",
+  blockedByCover: "请先退出沉浸模式",
+  sortUnavailable: "当前 Obsidian 没有暴露文件列表的排序，无法调整文件夹顺序。",
 };
 
-/* Obsidian stamps its UI language onto <html lang>, which is public enough
-   to read without reaching into anything private. */
+/* Obsidian stamps its UI language onto <html lang>, which is public enough to
+   read without reaching into anything private. This one stays on `document`
+   rather than activeDocument: it is a global setting, and the main window is
+   where it is guaranteed to be stamped. Everything else that touches the DOM
+   goes through activeDocument, so a popped-out sidebar still works. */
 function stringsFor(language: Language): Strings {
   const lang =
     language === "auto"
@@ -175,12 +207,16 @@ function stringsFor(language: Language): Strings {
    cover is a single class away and can never leave half-covered rows behind. */
 const BODY_CLASS = "immersive-folder-on";
 const BUTTON_CLASS = "immersive-folder-button";
+const SORT_BUTTON_CLASS = "immersive-folder-sort-button";
+/* On whichever of the two buttons is waiting for the other mode to finish. */
+const DISABLED_CLASS = "immersive-folder-blocked";
 /* Marks a row the cover should spare. Set from here, matched in styles.css:
    the rules there cannot know which folder is focused, so they cover
    everything and let this class carve out the exceptions. */
 const REVEAL_CLASS = "immersive-folder-reveal";
 
 const ICON = "immersive-folder";
+const SORT_ICON = "immersive-folder-sort";
 
 /* The button draws the plugin's own idea rather than a stock glyph: rows of
    text with the middle one carrying the weight while its neighbours fall back.
@@ -206,6 +242,20 @@ function registerIcon(): void {
       row("M20 50 H80", 'stroke-width="11"') +
       row("M22 72 H78", 'stroke-width="7" opacity="0.35"')
   );
+
+  /* The arrange button. A grip was tried first and read wrong on a toolbar:
+     six dots say "drag me", but the button is not draggable — it is a switch.
+     An axis with an arrow at each end says what the mode does instead, which
+     is let things move up and down. */
+  const stroke = 'stroke-width="8" stroke-linejoin="round"';
+  addIcon(
+    SORT_ICON,
+    row("M50 40 V14", stroke) +
+      row("M37 27 L50 14 L63 27", stroke) +
+      row("M24 50 H76", stroke) +
+      row("M50 60 V86", stroke) +
+      row("M37 73 L50 86 L63 73", stroke)
+  );
 }
 
 export default class ImmersiveFolderPlugin extends Plugin {
@@ -216,17 +266,32 @@ export default class ImmersiveFolderPlugin extends Plugin {
   /* The explorer builds and discards rows as you scroll, so a row can turn up
      at any moment and has to arrive already marked. */
   private readonly observer = new MutationObserver(() => this.applyMarks());
+  readonly orderStore = new OrderStore(this);
+  private readonly dragSort = new DragSort({
+    /* Read fresh rather than passed once, so switching language takes effect
+       on the next pass without re-creating anything. */
+    hint: () => this.t.dragHint,
+    canDrag: (row) => this.canDrag(row),
+    commit: (folderPath, moving, target, position) =>
+      void this.commitMove(folderPath, moving, target, position),
+  });
+  /* Null until the explorer has been found and its prototype patched, and
+     null again for good on an Obsidian that does not have the methods. */
+  private sortPatch: SortPatch | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
     registerIcon();
 
-    this.register(() => document.body.removeClass(BODY_CLASS));
+    this.register(() => activeDocument.body.removeClass(BODY_CLASS));
     this.register(() => this.observer.disconnect());
     this.register(() => this.clearMarks());
     this.register(() => this.removeButtons());
+    this.register(() => this.releaseSorting());
+    this.register(() => this.dragSort.setActive(false));
 
     this.registerToggleCommand();
+    this.registerSortCommand();
 
     this.addSettingTab(new ImmersiveFolderSettingTab(this.app, this));
 
@@ -241,7 +306,17 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("layout-change", redraw));
     this.registerEvent(this.app.vault.on("rename", redraw));
 
-    this.app.workspace.onLayoutReady(redraw);
+    /* Pruning waits for the layout: it asks the vault whether each recorded
+       path still exists, and before the vault has finished indexing every
+       folder would look deleted. */
+    this.app.workspace.onLayoutReady(() => {
+      const pruned = this.orderStore.prune(
+        (path) => this.app.vault.getAbstractFileByPath(path) !== null
+      );
+      if (pruned) void this.saveOrders();
+      this.registerOrderEvents();
+      redraw();
+    });
   }
 
   /* The active vocabulary. Read fresh each time rather than cached, so
@@ -260,7 +335,25 @@ export default class ImmersiveFolderPlugin extends Plugin {
     });
   }
 
+  registerSortCommand(): void {
+    this.addCommand({
+      id: "toggle-sort-mode",
+      name: this.t.sortCommand,
+      callback: () => this.toggleSortMode(),
+    });
+  }
+
   async toggle(): Promise<void> {
+    /* The two modes take turns. The cover replaces the very names you would
+       be arranging by, so one has to be off for the other to mean anything.
+       Refused rather than resolved silently: this switch's job is the cover,
+       and closing arrange mode on the way past would owe the user a restore
+       afterwards — state that arrange mode deliberately does not keep. */
+    if (this.dragSort.isActive()) {
+      new Notice(this.t.blockedBySort);
+      return;
+    }
+
     const turningOn = !this.settings.enabled;
 
     if (this.settings.collapseOthers) {
@@ -298,6 +391,12 @@ export default class ImmersiveFolderPlugin extends Plugin {
       | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
+    /* Object.assign copies one level deep, so a settings file with no orders
+       key would leave this.settings.orders pointing at the object inside
+       DEFAULT_SETTINGS — and since orders are edited in place, every drag
+       would write into the defaults themselves. Copy it either way. */
+    this.settings.orders = { ...(saved?.orders ?? {}) };
+
     /* revealOnEnable only fired as the cover came down; keepActiveInView is
        the same idea applied to every switch. Carry the old value over. */
     if (saved && typeof saved.revealOnEnable === "boolean") {
@@ -316,16 +415,20 @@ export default class ImmersiveFolderPlugin extends Plugin {
        class: the explorer is exactly as the theme drew it. */
     this.focusPath = folder ? (folder.isRoot() ? "" : folder.path) : null;
 
-    document.body.toggleClass(BODY_CLASS, this.focusPath !== null);
+    activeDocument.body.toggleClass(BODY_CLASS, this.focusPath !== null);
+    this.ensureSortPatched();
     this.observeExplorer();
     this.applyMarks();
+    /* Which rows are readable just changed, and an unreadable row must not be
+       left holding a grip it cannot use. */
+    this.dragSort.refresh();
     this.syncButtons();
     this.syncExplorer();
   }
 
   private observeExplorer(): void {
     for (const container of Array.from(
-      document.querySelectorAll(".nav-files-container")
+      activeDocument.querySelectorAll(".nav-files-container")
     )) {
       /* childList only. Marking a row sets a class, and watching attributes
          as well would make every pass schedule another one. Re-observing a
@@ -337,7 +440,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
   private applyMarks(): void {
     const focus = this.focusPath;
     for (const row of Array.from(
-      document.querySelectorAll<HTMLElement>(
+      activeDocument.querySelectorAll<HTMLElement>(
         ".nav-files-container .tree-item-self[data-path]"
       )
     )) {
@@ -351,7 +454,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
   private clearMarks(): void {
     for (const row of Array.from(
-      document.querySelectorAll<HTMLElement>(`.${REVEAL_CLASS}`)
+      activeDocument.querySelectorAll<HTMLElement>(`.${REVEAL_CLASS}`)
     )) {
       row.removeClass(REVEAL_CLASS);
     }
@@ -433,6 +536,129 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.settings.expandedBefore = [];
   }
 
+  /* ── Custom order ──────────────────────────────────────────────────── */
+
+  /* The patch lands on the view's *prototype*, so finding one explorer is
+     enough to cover every leaf, including ones opened later. But there has to
+     be one to reach the prototype through: the file explorer is normally up
+     before the plugin loads, and when it is not — a workspace that starts
+     with the sidebar closed — this runs again on the next redraw, which
+     layout-change already brings. */
+  private ensureSortPatched(): void {
+    if (this.sortPatch) return;
+
+    const leaf = this.app.workspace.getLeavesOfType("file-explorer")[0];
+    if (!leaf) return;
+
+    this.sortPatch = patchSorting(
+      leaf.view,
+      (folder: TFolder, sorted: FileTreeItem[]) =>
+        this.orderStore.apply(folder, sorted)
+    );
+
+    /* Rows already on screen were laid out before the patch existed. */
+    if (this.sortPatch) this.sortExplorer();
+  }
+
+  private releaseSorting(): void {
+    if (!this.sortPatch) return;
+    this.sortPatch.unpatch();
+    this.sortPatch = null;
+    /* Hand the tree back in Obsidian's own order rather than leaving the last
+       custom arrangement frozen on screen until something rebuilds it. */
+    this.sortExplorer();
+  }
+
+  sortExplorer(): void {
+    for (const view of this.explorerViews()) sortView(view);
+  }
+
+  /* Only folders take part. This plugin arranges the shape of the tree and
+     leaves every file where the sort menu put it, so a file row grows no
+     handle at all — which makes "files do not move here" something you can
+     see rather than something you find out by trying.
+   *
+     The cover does not come into it: the two modes refuse to be on at the
+     same time, so there are never skeleton bars to drag. */
+  private canDrag(row: HTMLElement): boolean {
+    const path = row.getAttribute("data-path");
+    return path !== null && this.app.vault.getFolderByPath(path) !== null;
+  }
+
+  private async commitMove(
+    folderPath: string,
+    moving: string,
+    target: string,
+    position: "before" | "after"
+  ): Promise<void> {
+    /* Freeze what is on screen right now, before every drag rather than only
+       the first. The move below is expressed as "put this name next to that
+       one", so both names have to be in the record for it to mean anything —
+       and a subfolder created since the last drag is not, until this runs. */
+    this.orderStore.capture(folderPath, this.displayedFolderNames(folderPath));
+
+    this.orderStore.move(folderPath, moving, target, position);
+    await this.saveOrders();
+    /* Slide the rows rather than swapping them out from under the pointer —
+       a list that simply looks different afterwards leaves you unsure the
+       drop did what you meant. */
+    animateReorder(() => this.sortExplorer());
+  }
+
+  /* A folder's subfolders in the order they are drawn: Obsidian's own sorting
+     with this plugin's record already laid over it.
+   *
+     Asked of the unpatched sorter rather than read off the screen. Reading
+     the DOM was the first attempt and is quietly wrong: the explorer
+     virtualises its rows, so a folder long enough to scroll has most of its
+     children missing from the document. The snapshot would record only the
+     part that happened to be in view, and everything else would come back as
+     "never seen" and sink to the bottom the moment the folder was arranged. */
+  private displayedFolderNames(folderPath: string): string[] {
+    const folder =
+      folderPath === "/"
+        ? this.app.vault.getRoot()
+        : this.app.vault.getFolderByPath(folderPath);
+
+    /* Arrange mode does not open without the patch, so this is a guard
+       rather than a path anything reaches. */
+    if (!folder || !this.sortPatch) return [];
+
+    return this.orderStore
+      .apply(folder, this.sortPatch.nativeItems(folder))
+      .filter((item) => item.file instanceof TFolder)
+      .map((item) => item.file.name);
+  }
+
+  /* Persist without redrawing. saveSettings() repaints the cover, which is
+     right when a setting changed and wasteful when all that moved was a name
+     inside an order. */
+  async saveOrders(): Promise<void> {
+    await this.saveData(this.settings);
+  }
+
+  /* No "create" handler: a folder that appears after its parent was arranged
+     is simply absent from the record, and apply() already knows what to do
+     with that — it goes to the bottom of the folder block until someone drags
+     it. Nothing to write, so nothing to listen for.
+
+     Both handlers below report whether they actually changed the record, and
+     the save only happens when they did. A record holds folder names only,
+     while most of what happens in a vault is files, so without that check
+     nearly every rename in the vault would rewrite data.json for nothing. */
+  private registerOrderEvents(): void {
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (this.orderStore.onDelete(file)) void this.saveOrders();
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (this.orderStore.onRename(file, oldPath)) void this.saveOrders();
+      })
+    );
+  }
+
   private *explorerViews(): Generator<FileExplorerView> {
     for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
       const view: unknown = leaf.view;
@@ -447,33 +673,100 @@ export default class ImmersiveFolderPlugin extends Plugin {
       );
       if (!bar) continue;
 
-      let button = bar.querySelector<HTMLElement>(`.${BUTTON_CLASS}`);
-      if (!button) {
-        button = bar.createDiv({
-          cls: `clickable-icon nav-action-button ${BUTTON_CLASS}`,
-        });
-        /* The glyph never changes, so it is drawn once at creation; only the
-           state below is refreshed. */
-        setIcon(button, ICON);
-        button.addEventListener("click", () => void this.toggle());
-      }
-
-      const on = this.settings.enabled;
       /* Tracks the setting, not whether the cover happens to be drawn right
          now: with no file open the cover lifts on its own, and a button that
          flipped itself back to "off" would read as having been switched off
          behind the user's back. */
-      button.toggleClass("is-active", on);
-      button.setAttribute(
+      const covering = this.settings.enabled;
+      const sorting = this.dragSort.isActive();
+
+      /* Each mode dims the other's button while it is on, and puts the reason
+         where the tooltip was. The button stays clickable on purpose: the
+         notice is the fallback for the click that happens anyway, and a
+         control that dims *and* goes dead reads as broken rather than as
+         waiting its turn. */
+      const cover = this.syncButton(bar, BUTTON_CLASS, ICON, covering, () =>
+        void this.toggle()
+      );
+      cover.toggleClass(DISABLED_CLASS, sorting);
+      cover.setAttribute(
         "aria-label",
-        on ? this.t.ariaOn : this.t.ariaOff
+        sorting
+          ? this.t.blockedBySort
+          : covering
+            ? this.t.ariaOn
+            : this.t.ariaOff
+      );
+
+      /* An axis with arrows at both ends: the button is a switch, not
+         something you drag, so it shows what the mode does rather than
+         echoing the grips the rows will grow. */
+      const sort = this.syncButton(
+        bar,
+        SORT_BUTTON_CLASS,
+        SORT_ICON,
+        sorting,
+        () => this.toggleSortMode()
+      );
+      sort.toggleClass(DISABLED_CLASS, covering);
+      sort.setAttribute(
+        "aria-label",
+        covering
+          ? this.t.blockedByCover
+          : sorting
+            ? this.t.sortModeOn
+            : this.t.sortModeOff
       );
     }
   }
 
+  private syncButton(
+    bar: HTMLElement,
+    cls: string,
+    icon: string,
+    active: boolean,
+    onClick: () => void
+  ): HTMLElement {
+    let button = bar.querySelector<HTMLElement>(`.${cls}`);
+    if (!button) {
+      button = bar.createDiv({
+        cls: `clickable-icon nav-action-button ${cls}`,
+      });
+      /* The glyph never changes, so it is drawn once at creation; only the
+         state below is refreshed. */
+      setIcon(button, icon);
+      button.addEventListener("click", onClick);
+    }
+    button.toggleClass("is-active", active);
+    return button;
+  }
+
+  /* Sort mode is deliberately not remembered across restarts: it is something
+     you switch on to tidy up and switch off again, not a preference. Which is
+     also why nothing here needs a matching restore — see toggle(). */
+  toggleSortMode(): void {
+    /* Only opening is refused. Whatever state the tree is in, switching the
+       mode off has to stay available. */
+    if (!this.dragSort.isActive()) {
+      if (this.settings.enabled) {
+        new Notice(this.t.blockedByCover);
+        return;
+      }
+      /* Without the patch a drag would record an order nothing ever applies,
+         which is worse than not offering the mode at all. */
+      if (!this.sortPatch) {
+        new Notice(this.t.sortUnavailable);
+        return;
+      }
+    }
+
+    this.dragSort.setActive(!this.dragSort.isActive());
+    this.syncButtons();
+  }
+
   private removeButtons(): void {
     for (const el of Array.from(
-      document.querySelectorAll(`.${BUTTON_CLASS}`)
+      activeDocument.querySelectorAll(`.${BUTTON_CLASS}, .${SORT_BUTTON_CLASS}`)
     )) {
       el.remove();
     }
@@ -521,6 +814,7 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         desc: t.collapseDesc,
         control: { type: "toggle", key: "collapseOthers" },
       },
+      { name: t.dragName, desc: t.dragIntro },
       { name: t.disclaimerName, desc: t.disclaimer },
     ];
   }
@@ -542,6 +836,7 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         /* Every label on this page, and the command's name, came from the
            language that just changed. */
         plugin.registerToggleCommand();
+        plugin.registerSortCommand();
         this.update();
         return;
       case "collapseOthers":

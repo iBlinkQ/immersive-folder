@@ -15,6 +15,11 @@ Custom icons (from [Iconize](https://github.com/FlorianWoelki/obsidian-iconize))
 become placeholder tiles rather than disappearing, so the rows keep their shape
 and the covered list still reads as a list.
 
+You can also **arrange the folders by hand**: switch on arrange mode and drag
+folders to set their order. Files are left alone — they stay wherever the sort
+menu put them. Nothing is written to disk beyond the order itself, no file is
+ever moved, and ordinary dragging is left exactly as it was.
+
 ## Why
 
 - **Focus.** A vault of two thousand notes stops competing for attention with
@@ -34,6 +39,46 @@ and the covered list still reads as a list.
   and off around recordings.
 
 The state is remembered across restarts.
+
+### Arranging the folders by hand
+
+The **grip button** at the top of the file explorer switches on folder arrange
+mode. Every folder grows a handle and starts to drift, which is the list
+saying it can be rearranged. Drag a folder up or down to set where it sits
+among its sibling folders, then press the button again to leave.
+
+**Only folders take part.** Files grow no handle, do not drift, and dim while
+the mode is on — they stay exactly where Obsidian's sort menu put them, which
+is also why switching between name and date still does what it always did. So
+the plugin sets the shape of the tree, and the sort menu keeps every row
+inside it.
+
+**Hold a folder and only the folders that can take it keep moving** —
+everything at another level dims and goes still. Reordering is always among
+siblings, and this way you can see that rather than having to remember it. A
+line shows where the folder will land.
+
+Changes are saved as you make them; the button is only a way in and out.
+
+The first drag in a folder fixes the order of that folder's subfolders. Every
+other folder goes on sorting the way you told Obsidian to, and a vault where
+you never arrange anything stores nothing at all. A folder made later starts
+at the bottom, until you drag it somewhere.
+
+While the mode is on the tree holds still: rows do not open, folders do not
+fold, and the handle sits where the collapse arrow was. Expand whatever you
+need to see before switching it on.
+
+**Ordinary dragging is untouched.** With the mode off, dragging a note into
+another folder behaves exactly as it always did — that is Obsidian's own
+feature, and this plugin does not listen to it. Keeping the two apart in time
+is what lets each one be unambiguous: on screen, "below that folder" and "into
+that folder" are the same pixel.
+
+**Immersive mode and arrange mode take turns.** The cover replaces the very
+names you would be arranging by, so switching one on while the other is up
+says which one is in the way rather than quietly turning it off. The button
+that is waiting dims, and its tooltip says what to leave first.
 
 ### Settings
 
@@ -55,17 +100,28 @@ except the one you are in. Less to scroll past, and it stops the bars from
 giving away how many files the other folders hold. Whatever was open is put
 back when you leave immersive mode. On by default.
 
-### Changing how the bars look
+### Changing how it looks
 
-The bars take their colour from two CSS variables, so a snippet is enough to
-pitch them to your theme:
+Everything the plugin paints takes its colour from CSS variables, so a snippet
+is enough to pitch it to your theme:
 
 ```css
 body {
+  /* The skeleton bars */
   --immersive-folder-bar: var(--text-faint);
   --immersive-folder-bar-opacity: 0.5;
+
+  /* Arrange mode: the drop line, the row you hold, the handles, and how far
+     rows at other levels dim while you hold one */
+  --immersive-folder-drop-line: var(--color-accent);
+  --immersive-folder-drag-bg: var(--background-modifier-active-hover);
+  --immersive-folder-handle: var(--text-muted);
+  --immersive-folder-dim: 0.32;
 }
 ```
+
+The drop line follows the accent colour you picked in Appearance, so it matches
+whatever theme you are on without being told.
 
 ## What it does not do
 
@@ -88,9 +144,8 @@ like everything else. Switch the cover off to search by name.
 
 ## How it works
 
-The rules are generated from the active file's parent path and injected as a
-stylesheet, matching rows on their `data-path` attribute. That matters for two
-reasons: the explorer virtualises its rows, so a row can be created at any
+Rows are matched on their `data-path` attribute and marked with a class, which
+a static stylesheet then acts on. That matters for two reasons: the explorer virtualises its rows, so a row can be created at any
 moment and has to arrive already styled; and the folder you are in stays
 readable even when it is collapsed and the active row is not in the document
 at all.
@@ -103,6 +158,28 @@ internal API — every use of it is guarded, so if a future Obsidian renames it
 those two settings stop working and the cover itself carries on. The folding
 runs only when the active file actually changes, not on every redraw, or it
 would fight you each time you moved a pane.
+
+The custom order is a shuffle laid over Obsidian's own sorting rather than a
+replacement for it. `getSortedFolderItems` is patched on the explorer's
+prototype, and a folder with no recorded order is handed straight back
+untouched — so the sort menu still decides everything except the subfolders
+you arranged by hand. Only subfolder rows are moved, and they are moved
+between the indexes they already occupy, so every file comes back exactly
+where Obsidian put it. Orders are stored per folder as a list of subfolder
+names, and only folders you actually dragged in are stored at all.
+
+Arrange mode is what keeps reordering and moving apart. With it off, nothing
+here listens to a drag at all. With it on, every drag event over the explorer
+is taken in the capture phase before Obsidian's own handlers run — which is
+not tidiness but the whole safety story: left to itself Obsidian expands
+folders the pointer rests on and moves the file into whichever folder it last
+saw, including positions no line was drawn for, so the move would arrive with
+nothing on screen having predicted it. Rows already carry `draggable` from
+Obsidian, so there is no drag to start.
+
+The patch and the redraw that follows it are internal API, checked before use
+and removed on unload; if a future Obsidian moves them, ordering switches
+itself off and the rest carries on.
 
 ## Installing
 
