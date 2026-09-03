@@ -32,9 +32,10 @@ ever moved, and ordinary dragging is left exactly as it was.
 
 - **Focus.** A vault of two thousand notes stops competing for attention with
   the dozen you are actually working on.
-- **Privacy over your shoulder.** Open a work folder in the office and the
-  person beside you sees that folder, not the names of everything else you
-  keep in the vault.
+- **Presenting in a meeting.** Put one project on the projector to walk a room
+  through it, and the room reads that project — not the name of the one beside
+  it, or of another client, or of whatever you keep for yourself. A live screen
+  has no second take.
 - **Screen recordings.** Show the folder the video is about and leave the rest
   of the sidebar unreadable, without rearranging your vault first.
 
