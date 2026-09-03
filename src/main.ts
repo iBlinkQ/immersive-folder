@@ -168,8 +168,8 @@ const EN: Strings = {
     "names are still in the page for anyone with developer tools.",
   dragName: "Arranging the folders by hand",
   dragIntro:
-    "The grip button at the top of the file explorer switches on folder " +
-    "arrange mode. Every folder grows a handle and starts to drift, and " +
+    "The up-and-down arrow button at the top of the file explorer switches " +
+    "on folder arrange mode. Every folder grows a handle and starts to drift, and " +
     "dragging one sets where it sits among its sibling folders — hold one " +
     "and only the folders that can take it keep moving, while the rest dim. " +
     "Files are left out of it entirely: they grow no handle and stay exactly " +
@@ -230,7 +230,7 @@ const ZH: Strings = {
     "那些名字仍然在页面里，任何人打开开发者工具都能读到。",
   dragName: "手动排列文件夹",
   dragIntro:
-    "文件列表顶部那个六点按钮打开「调整文件夹顺序」模式。每个文件夹都会长出手柄并" +
+    "文件列表顶部那个上下箭头按钮打开「调整文件夹顺序」模式。每个文件夹都会长出手柄并" +
     "轻轻浮动，拖动它就能决定它排在同级文件夹中间的哪个位置 —— 按住其中一个时，" +
     "只有能接住它的同级文件夹继续浮动，其余会变暗。文件完全不参与：它们不会长出手柄，" +
     "始终待在排序菜单给它们的位置上，所以按文件名或按时间排序照样是原来的效果。" +

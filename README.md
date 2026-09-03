@@ -50,10 +50,12 @@ The state is remembered across restarts.
 
 ### Arranging the folders by hand
 
-The **grip button** at the top of the file explorer switches on folder arrange
-mode. Every folder grows a handle and starts to drift, which is the list
-saying it can be rearranged. Drag a folder up or down to set where it sits
-among its sibling folders, then press the button again to leave.
+The **up-and-down arrow button** at the top of the file explorer switches on
+folder arrange mode. Every folder grows a handle and starts to drift, which is
+the list saying it can be rearranged. Drag a folder up or down to set where it
+sits among its sibling folders, then press the button again to leave.
+
+![folder arrange mode: every folder carries a handle while the files below stay dim and handleless, and dragging one shows a line where it will land](docs/arrange.gif)
 
 **Only folders take part.** Files grow no handle, do not drift, and dim while
 the mode is on — they stay exactly where Obsidian's sort menu put them, which
@@ -101,8 +103,7 @@ feature. Whatever you hide is still on the command palette, and the settings
 page will offer to take you straight to the hotkeys page once something is
 hidden.
 
-**Keep the active file in view**
- — scrolls the explorer to each note as you
+**Keep the active file in view** — scrolls the explorer to each note as you
 switch to it, expanding whatever it takes to show it. Without it, switching to
 a note whose folder is scrolled out of view leaves you looking at a screen of
 bars and nothing else. On by default.
