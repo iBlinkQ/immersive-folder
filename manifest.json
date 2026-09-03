@@ -1,7 +1,7 @@
 {
   "id": "immersive-folder",
   "name": "Immersive Folder",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "minAppVersion": "1.13.0",
   "description": "Covers every folder but the one you are working in with skeleton bars, and lets you arrange the folders by hand.",
   "author": "iBlinkQ",
