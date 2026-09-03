@@ -255,13 +255,15 @@ export class DragSort {
           continue;
         }
 
-        /* The row's own document, not the host's first: a row always knows
-           which window it is in, and creating the element anywhere else would
-           make it a foreign node the moment it is inserted. */
-        const slot = row.ownerDocument.createElement("div");
-        slot.className = `tree-item-icon collapse-icon ${HANDLE_CLASS}`;
-        slot.setAttribute(INJECTED_ATTR, "");
-        row.prepend(slot);
+        /* createDiv on the row rather than the global createEl: it builds the
+           element in the row's own document, and a row always knows which
+           window it is in. Anything created elsewhere would be a foreign node
+           the moment it is inserted. */
+        row.createDiv({
+          cls: `tree-item-icon collapse-icon ${HANDLE_CLASS}`,
+          attr: { [INJECTED_ATTR]: "" },
+          prepend: true,
+        });
       }
     }
   }
@@ -588,8 +590,7 @@ export function animateReorder(docs: Document[], apply: () => void): void {
        so it travels nothing and the whole reorder lands as a teleport.
        Measured on such a theme: an item asked to return to y=86 was still at
        y=116, having moved 0 of the 30 pixels. */
-    item.style.transition = "none";
-    item.style.transform = `translateY(${delta}px)`;
+    item.setCssStyles({ transition: "none", transform: `translateY(${delta}px)` });
     furthest = Math.max(furthest, Math.abs(delta));
     moved.push(item);
   }
@@ -608,8 +609,10 @@ export function animateReorder(docs: Document[], apply: () => void): void {
 
   const ms = settleMs(furthest);
   for (const item of moved) {
-    item.style.transition = `transform ${ms}ms ${SETTLE_EASE}`;
-    item.style.transform = "";
+    item.setCssStyles({
+      transition: `transform ${ms}ms ${SETTLE_EASE}`,
+      transform: "",
+    });
   }
 
   /* A timer rather than transitionend: timers still fire in a background
@@ -623,6 +626,5 @@ export function animateReorder(docs: Document[], apply: () => void): void {
 
 function settle(item: HTMLElement): void {
   if (!item.style.transform && !item.style.transition) return;
-  item.style.transition = "";
-  item.style.transform = "";
+  item.setCssStyles({ transition: "", transform: "" });
 }

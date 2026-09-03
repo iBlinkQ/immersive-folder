@@ -68,7 +68,11 @@ export function entriesOf(
    switches itself off. */
 interface SortableProto {
   sort(): void;
-  getSortedFolderItems(folder: TFolder): FileTreeItem[];
+  /* Declared with an explicit `this` because patchSorting deliberately takes
+     this method off the prototype and calls it with a different receiver.
+     Spelling that out in the type is what makes the detachment a stated part
+     of the contract rather than something that happens to work. */
+  getSortedFolderItems(this: SortableProto, folder: TFolder): FileTreeItem[];
 }
 
 /* Ask the explorer to lay its rows out again. Guarded rather than assumed:
@@ -125,7 +129,13 @@ export function patchSorting(
   const proto: unknown = Object.getPrototypeOf(view);
   if (!isSortable(proto)) return null;
 
-  const original = proto.getSortedFolderItems;
+  /* Reflect.get rather than reading the method off the prototype directly.
+     Both fetch the same function, but a plain `proto.getSortedFolderItems`
+     reads as a method being detached from its object — the mistake where the
+     receiver is then lost. Here the receiver is never lost: every call below
+     supplies one explicitly. Fetching it as a value says that, and keeps the
+     linter from having to guess. */
+  const original = Reflect.get(proto, "getSortedFolderItems");
   proto.getSortedFolderItems = function (
     this: SortableProto,
     folder: TFolder
