@@ -174,8 +174,11 @@ release](https://github.com/iBlinkQ/immersive-folder/releases/latest) 下载
 npm install
 npm run dev     # 监听构建
 npm run build   # 类型检查并构建 main.js
+npm run lint    # 社区插件审核所用的那套规则
 npm run sync    # 构建后复制进 sync.mjs 里列出的库
 ```
+
+`npm run lint` 必须在仓库根目录跑：规则会从工作目录读 `manifest.json`。
 
 ## 许可
 

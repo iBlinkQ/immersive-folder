@@ -211,8 +211,12 @@ only in the releases, or after you run `npm run build` yourself.)
 npm install
 npm run dev     # watch build
 npm run build   # type-check and build main.js
+npm run lint    # the rules the community-plugin review runs
 npm run sync    # build, then copy into the vaults listed in sync.mjs
 ```
+
+`npm run lint` has to be run from the repository root: the rules read
+`manifest.json` from the working directory.
 
 ## License
 
