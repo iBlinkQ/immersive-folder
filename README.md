@@ -55,7 +55,7 @@ folder arrange mode. Every folder grows a handle and starts to drift, which is
 the list saying it can be rearranged. Drag a folder up or down to set where it
 sits among its sibling folders, then press the button again to leave.
 
-![folder arrange mode: every folder carries a handle while the files below stay dim and handleless, and dragging one shows a line where it will land](docs/arrange.gif)
+![folder arrange mode switched on: the collapse arrows become handles, the files below stay dim and handleless throughout, and each folder dragged shows a line where it will land](docs/arrange.gif)
 
 **Only folders take part.** Files grow no handle, do not drift, and dim while
 the mode is on — they stay exactly where Obsidian's sort menu put them, which
