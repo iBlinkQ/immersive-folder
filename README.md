@@ -13,9 +13,9 @@ name them `01_Inbox`, `02_Projects` just to make them line up.
 
 The folder is picked automatically from the file you have open — there is
 nothing to select and nothing to remember to turn off when you move on. Open a
-note somewhere else and the skeleton bars follow you there. With nothing open at all
-there is no folder to immerse in, so the button dims and asks you to open a
-note first, rather than storing a mode it has nothing to draw.
+note somewhere else and the skeleton bars follow you there. With nothing open
+at all there is no folder to immerse in, so the button dims and asks you to
+open a note first, rather than storing a mode it has nothing to draw.
 
 Only that folder and what it holds stay readable. The folders *above* it go
 under bars as well: a top-level name is usually the most telling thing on the
