@@ -2,14 +2,18 @@
 
 English · [简体中文](README.zh-CN.md)
 
-An Obsidian plugin. While you are working in a folder, that folder stays
-readable and everything else in the file explorer drops behind skeleton bars.
+An Obsidian plugin. While you are working in a folder, one click narrows the
+file explorer to that folder's notes and covers everything else up until you
+switch it back.
+
+It also lets you drag folders into the order you want, so you no longer have to
+name them `01_Inbox`, `02_Projects` just to make them line up.
 
 ![the file explorer with the Clippings folder readable and every other row reduced to skeleton bars](docs/screenshot.png)
 
 The folder is picked automatically from the file you have open — there is
 nothing to select and nothing to remember to turn off when you move on. Open a
-note somewhere else and the bars follow you there. With nothing open at all
+note somewhere else and the skeleton bars follow you there. With nothing open at all
 there is no folder to immerse in, so the button dims and asks you to open a
 note first, rather than storing a mode it has nothing to draw.
 
