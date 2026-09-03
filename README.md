@@ -9,7 +9,15 @@ readable and everything else in the file explorer drops behind skeleton bars.
 
 The folder is picked automatically from the file you have open — there is
 nothing to select and nothing to remember to turn off when you move on. Open a
-note somewhere else and the bars follow you there.
+note somewhere else and the bars follow you there. With nothing open at all
+there is no folder to immerse in, so the button dims and asks you to open a
+note first, rather than storing a mode it has nothing to draw.
+
+Only that folder and what it holds stay readable. The folders *above* it go
+under bars as well: a top-level name is usually the most telling thing on the
+screen, and leaving the trail readable would hand away the very names the
+cover is up to hide. The indentation is untouched, so you can still see which
+level you are on.
 
 Custom icons (from [Iconize](https://github.com/FlorianWoelki/obsidian-iconize))
 become placeholder tiles rather than disappearing, so the rows keep their shape
@@ -86,11 +94,15 @@ that is waiting dims, and its tooltip says what to leave first.
 to. English and 简体中文 ship with the plugin; pick one here to override the
 match. Everything switches over on the spot, the command name included.
 
-**Show the trail back to the root** — keeps the names of the folders above the
-one you are in, so you can still tell where you are in the tree. On by
-default. Turn it off and the trail is skeletoned too.
+**Toolbar buttons** — which of the plugin's two buttons sit at the top of the
+file explorer. Both are switches that show whether their mode is on, so both
+stay in plain sight by default; hide one if you only ever use the other
+feature. Whatever you hide is still on the command palette, and the settings
+page will offer to take you straight to the hotkeys page once something is
+hidden.
 
-**Keep the active file in view** — scrolls the explorer to each note as you
+**Keep the active file in view**
+ — scrolls the explorer to each note as you
 switch to it, expanding whatever it takes to show it. Without it, switching to
 a note whose folder is scrolled out of view leaves you looking at a screen of
 bars and nothing else. On by default.

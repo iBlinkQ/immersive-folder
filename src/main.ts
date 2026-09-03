@@ -24,10 +24,19 @@ import { animateReorder, DragSort } from "./dnd";
 
 type Language = "auto" | "en" | "zh";
 
+/* Which of the plugin's two buttons sit in the explorer's toolbar. Both are
+   stateful switches, so neither is ever folded away into a menu: the accent
+   wash on the button *is* the readout for "is this mode on right now", and a
+   menu would trade that away for a click. What this setting is for is the
+   person who only ever wanted one of the two features — not for making the
+   toolbar fit, which is not a fight this plugin can win anyway (see
+   syncButtons). */
+type ToolbarButtons = "both" | "immersive" | "sort" | "none";
+
 interface ImmersiveFolderSettings {
   language: Language;
+  toolbarButtons: ToolbarButtons;
   enabled: boolean;
-  revealTrail: boolean;
   keepActiveInView: boolean;
   collapseOthers: boolean;
   /* Which folders were open before the tree was folded down, so leaving
@@ -44,10 +53,29 @@ interface AppWithCommands {
   commands: { executeCommandById(id: string): boolean };
 }
 
+/* Same story for app.setting. Every hop is optional so that a build which
+   renamed any of it quietly does nothing instead of throwing: this is a
+   convenience on top of a page the user can always reach by hand. */
+interface AppWithSetting {
+  setting?: {
+    open?(): void;
+    openTabById?(id: string): { setQuery?(query: string): void } | undefined;
+  };
+}
+
+/* Hiding a button is only a fair trade if the way back is one click away, and
+   "go bind a hotkey yourself" is not one click — it is a page to find and a
+   name to remember. So the row that suggests it also does it. */
+function openHotkeySettings(app: App, query: string): void {
+  const setting = (app as unknown as AppWithSetting).setting;
+  setting?.open?.();
+  setting?.openTabById?.("hotkeys")?.setQuery?.(query);
+}
+
 const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   language: "auto",
+  toolbarButtons: "both",
   enabled: false,
-  revealTrail: true,
   keepActiveInView: true,
   collapseOthers: true,
   expandedBefore: [],
@@ -67,8 +95,14 @@ interface Strings {
   language: string;
   languageDesc: string;
   languageAuto: string;
-  trail: string;
-  trailDesc: string;
+  toolbar: string;
+  toolbarDesc: string;
+  toolbarBoth: string;
+  toolbarImmersive: string;
+  toolbarSort: string;
+  toolbarNone: string;
+  hotkeyName: string;
+  hotkeyDesc: string;
   keepInView: string;
   keepInViewDesc: string;
   collapse: string;
@@ -80,6 +114,8 @@ interface Strings {
   sortModeOff: string;
   sortCommand: string;
   dragHint: string;
+  /* Nothing open, so nothing to immerse in. */
+  needFile: string;
   /* The two modes take turns, and each refusal says which one is in the way. */
   blockedBySort: string;
   blockedByCover: string;
@@ -101,10 +137,20 @@ const EN: Strings = {
   languageDesc:
     "Follows whatever language Obsidian is set to, unless you pick one here.",
   languageAuto: "Match Obsidian",
-  trail: "Show the trail back to the root",
-  trailDesc:
-    "Keeps the names of the folders above the one you are in, so you can " +
-    "still tell where you are. Turn it off to skeleton the trail as well.",
+  toolbar: "Toolbar buttons",
+  toolbarDesc:
+    "Which of this plugin's two buttons sit at the top of the file explorer. " +
+    "Both are switches that show whether their mode is on, so both stay in " +
+    "plain sight by default — hide one if you only ever use the other " +
+    "feature. Whatever you hide is still on the command palette.",
+  toolbarBoth: "Show both",
+  toolbarImmersive: "Immersive folder only",
+  toolbarSort: "Folder arrange only",
+  toolbarNone: "Hide both",
+  hotkeyName: "Set a hotkey for what you hid",
+  hotkeyDesc:
+    "A hidden button leaves the command as the only way in. Opens Obsidian's " +
+    "hotkeys page with this plugin's commands already filtered.",
   keepInView: "Keep the active file in view",
   keepInViewDesc:
     "Scrolls the explorer to each note as you switch to it, expanding " +
@@ -136,6 +182,7 @@ const EN: Strings = {
   sortModeOn: "Done arranging",
   sortCommand: "Toggle folder arrange mode",
   dragHint: "Drag to reorder",
+  needFile: "Open a note first",
   blockedBySort: "Leave folder arrange mode first",
   blockedByCover: "Leave immersive folder first",
   sortUnavailable:
@@ -156,10 +203,19 @@ const ZH: Strings = {
   language: "语言",
   languageDesc: "默认跟随 Obsidian 的界面语言，也可以在这里单独指定。",
   languageAuto: "跟随 Obsidian",
-  trail: "保留回到根目录的路径",
-  trailDesc:
-    "保留你所在文件夹上层那些文件夹的名字，这样你还知道自己在树的哪个位置。" +
-    "关掉之后，这条路径也会一并变成骨架条。",
+  toolbar: "工具栏按钮",
+  toolbarDesc:
+    "本插件的两个按钮里，哪些留在文件列表顶部。它们都是能看出模式开没开的开关，" +
+    "所以默认都摆在明面上 —— 如果你只用其中一个功能，可以把另一个藏起来。" +
+    "藏起来的那个，命令面板里照样能用。",
+  toolbarBoth: "两个都显示",
+  toolbarImmersive: "只显示沉浸模式",
+  toolbarSort: "只显示调整文件夹顺序",
+  toolbarNone: "两个都不显示",
+  hotkeyName: "给藏起来的功能设置快捷键",
+  hotkeyDesc:
+    "按钮藏起来之后，命令就成了唯一的入口。点这里直接打开 Obsidian 的快捷键页面，" +
+    "并且已经筛好了本插件的命令。",
   keepInView: "让当前文件始终可见",
   keepInViewDesc:
     "每次切换笔记时把文件列表滚动过去，需要展开哪些文件夹就展开哪些。" +
@@ -185,16 +241,20 @@ const ZH: Strings = {
   sortModeOn: "完成调整",
   sortCommand: "切换调整文件夹顺序模式",
   dragHint: "拖动调整排序",
+  needFile: "请先打开一篇笔记",
   blockedBySort: "请先退出「调整文件夹顺序」模式",
+
   blockedByCover: "请先退出沉浸模式",
   sortUnavailable: "当前 Obsidian 没有暴露文件列表的排序，无法调整文件夹顺序。",
 };
 
 /* Obsidian stamps its UI language onto <html lang>, which is public enough to
-   read without reaching into anything private. This one stays on `document`
-   rather than activeDocument: it is a global setting, and the main window is
-   where it is guaranteed to be stamped. Everything else that touches the DOM
-   goes through activeDocument, so a popped-out sidebar still works. */
+   read without reaching into anything private. This one deliberately stays on
+   the plain `document`: it is a global setting, and the main window is where
+   it is guaranteed to be stamped. Everything that *draws* goes through
+   explorerDocuments() instead, which is a different question — not "which
+   window has focus" but "which windows are showing a file tree". */
+
 function stringsFor(language: Language): Strings {
   const lang =
     language === "auto"
@@ -271,6 +331,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
     /* Read fresh rather than passed once, so switching language takes effect
        on the next pass without re-creating anything. */
     hint: () => this.t.dragHint,
+    documents: () => this.explorerDocuments(),
     canDrag: (row) => this.canDrag(row),
     commit: (folderPath, moving, target, position) =>
       void this.commitMove(folderPath, moving, target, position),
@@ -278,12 +339,18 @@ export default class ImmersiveFolderPlugin extends Plugin {
   /* Null until the explorer has been found and its prototype patched, and
      null again for good on an Obsidian that does not have the methods. */
   private sortPatch: SortPatch | null = null;
+  /* The documents currently carrying the body class. Kept rather than
+     recomputed on the way out, because a document can stop holding an
+     explorer — a popped-out sidebar docked back into the main window — and the
+     class then has to come off the one it left behind, which no query for
+     "documents with an explorer in them" would still find. */
+  private readonly painted = new Set<Document>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
     registerIcon();
 
-    this.register(() => activeDocument.body.removeClass(BODY_CLASS));
+    this.register(() => this.unpaint());
     this.register(() => this.observer.disconnect());
     this.register(() => this.clearMarks());
     this.register(() => this.removeButtons());
@@ -356,6 +423,18 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
     const turningOn = !this.settings.enabled;
 
+    /* Nothing open means no folder to immerse in. Switching on regardless is
+       what used to happen, and it stored a mode it could not show: the button
+       lit over an explorer it had not touched, and then the cover sprang up by
+       itself at whatever note was opened next. Say why instead.
+
+       Only on the way on. Leaving is never refused, whatever is or is not
+       open — closing your last note must not lock you inside the mode. */
+    if (turningOn && !this.app.workspace.getActiveFile()) {
+      new Notice(this.t.needFile);
+      return;
+    }
+
     if (this.settings.collapseOthers) {
       if (turningOn) this.captureExpanded();
       else this.restoreExpanded();
@@ -402,6 +481,13 @@ export default class ImmersiveFolderPlugin extends Plugin {
     if (saved && typeof saved.revealOnEnable === "boolean") {
       this.settings.keepActiveInView = saved.revealOnEnable;
     }
+
+    /* Keys that used to be settings and are not any more. Object.assign copies
+       whatever the file happens to hold, so without this they would ride along
+       in memory and be written straight back out on the next save, leaving a
+       settings file advertising switches the plugin no longer has. */
+    const stale = this.settings as unknown as Record<string, unknown>;
+    for (const key of ["revealOnEnable", "revealTrail"]) delete stale[key];
   }
 
   private redraw(): void {
@@ -415,7 +501,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
        class: the explorer is exactly as the theme drew it. */
     this.focusPath = folder ? (folder.isRoot() ? "" : folder.path) : null;
 
-    activeDocument.body.toggleClass(BODY_CLASS, this.focusPath !== null);
+    this.paint();
     this.ensureSortPatched();
     this.observeExplorer();
     this.applyMarks();
@@ -426,10 +512,59 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.syncExplorer();
   }
 
+  /* Every document that currently holds a file explorer.
+   *
+     `activeDocument` used to be the anchor for all of this, and it is the
+     wrong one. It follows the *focused window*, not the tree. Pop a note out
+     into a window of its own and click into it — or open Settings, which 1.13
+     also puts in its own window — and the cover was painted onto a document
+     with no file list anywhere in it, while the explorer you were looking at
+     sat there uncovered. Measured on a real vault: the class landed on the
+     settings window's <body>, and that document answered zero for
+     `.nav-files-container`.
+   *
+     What the cover belongs to is the explorer, so the explorer is what it
+     asks. Usually one document; more than one when a sidebar has been popped
+     out while another window still shows a tree, and each of those wants the
+     same cover.
+   *
+     Recomputed on every pass rather than cached: a window can open, close, or
+     swallow a pane at any time, and every caller here already runs per
+     redraw. */
+  private explorerDocuments(): Document[] {
+    const docs: Document[] = [];
+    for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
+      const doc = leaf.view.containerEl.ownerDocument;
+      if (!docs.includes(doc)) docs.push(doc);
+    }
+    return docs;
+  }
+
+  /* The body class, on every document showing a tree and on no other. */
+  private paint(): void {
+    const wanted = this.focusPath !== null;
+    const live = this.explorerDocuments();
+
+    for (const doc of Array.from(this.painted)) {
+      if (wanted && live.includes(doc)) continue;
+      doc.body.removeClass(BODY_CLASS);
+      this.painted.delete(doc);
+    }
+    if (!wanted) return;
+
+    for (const doc of live) {
+      doc.body.addClass(BODY_CLASS);
+      this.painted.add(doc);
+    }
+  }
+
+  private unpaint(): void {
+    for (const doc of this.painted) doc.body.removeClass(BODY_CLASS);
+    this.painted.clear();
+  }
+
   private observeExplorer(): void {
-    for (const container of Array.from(
-      activeDocument.querySelectorAll(".nav-files-container")
-    )) {
+    for (const container of this.explorerQuery(".nav-files-container")) {
       /* childList only. Marking a row sets a class, and watching attributes
          as well would make every pass schedule another one. Re-observing a
          container it already watches is harmless. */
@@ -437,12 +572,19 @@ export default class ImmersiveFolderPlugin extends Plugin {
     }
   }
 
+  /* One selector, swept across every document with a tree in it. */
+  private explorerQuery(selector: string): HTMLElement[] {
+    const found: HTMLElement[] = [];
+    for (const doc of this.explorerDocuments()) {
+      found.push(...Array.from(doc.querySelectorAll<HTMLElement>(selector)));
+    }
+    return found;
+  }
+
   private applyMarks(): void {
     const focus = this.focusPath;
-    for (const row of Array.from(
-      activeDocument.querySelectorAll<HTMLElement>(
-        ".nav-files-container .tree-item-self[data-path]"
-      )
+    for (const row of this.explorerQuery(
+      ".nav-files-container .tree-item-self[data-path]"
     )) {
       const path = row.getAttribute("data-path");
       row.toggleClass(
@@ -453,24 +595,29 @@ export default class ImmersiveFolderPlugin extends Plugin {
   }
 
   private clearMarks(): void {
-    for (const row of Array.from(
-      activeDocument.querySelectorAll<HTMLElement>(`.${REVEAL_CLASS}`)
-    )) {
+    for (const row of this.explorerQuery(`.${REVEAL_CLASS}`)) {
       row.removeClass(REVEAL_CLASS);
     }
   }
 
-  /* Which rows keep their real name: the focused folder itself, the trail
-     back to the root when asked for, and the folder's direct children — one
-     segment further down and no deeper. Comparing paths rather than walking
-     the DOM means a row is judged the moment it is created, however the
-     explorer chose to nest it. */
+  /* Which rows keep their real name: the focused folder itself, and its direct
+     children — one segment further down and no deeper. Everything else goes
+     under a bar, the folders *above* the focused one included.
+   *
+     That last part was a setting once, defaulting to on. It is not one any
+     more, because a top-level folder name is usually the most telling thing on
+     the screen — the trail was handing away the very names the cover is up to
+     hide, and on a plugin built for screen sharing that is not a preference,
+     it is a hole. What still tells you where you are is the indentation, which
+     the cover never touches.
+   *
+     Comparing paths rather than walking the DOM means a row is judged the
+     moment it is created, however the explorer chose to nest it. */
   private spares(path: string, focus: string): boolean {
     /* Focused on the vault root: its own rows are the ones with no separator
        anywhere in their path. */
     if (focus === "") return !path.includes("/");
     if (path === focus) return true;
-    if (focus.startsWith(`${path}/`)) return this.settings.revealTrail;
     if (path.startsWith(`${focus}/`)) {
       return !path.slice(focus.length + 1).includes("/");
     }
@@ -602,7 +749,8 @@ export default class ImmersiveFolderPlugin extends Plugin {
     /* Slide the rows rather than swapping them out from under the pointer —
        a list that simply looks different afterwards leaves you unsure the
        drop did what you meant. */
-    animateReorder(() => this.sortExplorer());
+    animateReorder(this.explorerDocuments(), () => this.sortExplorer());
+
   }
 
   /* A folder's subfolders in the order they are drawn: Obsidian's own sorting
@@ -666,7 +814,18 @@ export default class ImmersiveFolderPlugin extends Plugin {
     }
   }
 
-  private syncButtons(): void {
+  /* Both buttons are laid out plainly, side by side, and nothing here tries to
+     make them fit the toolbar. On a narrow sidebar they wrap onto a second
+     row, which is Obsidian's own `flex-wrap` doing what it was built to do —
+     and any cleverness here would be undone by the next plugin the user
+     installs, since the container takes buttons in load order and offers no
+     way to claim a place in it. The setting below is the only lever, and it
+     belongs to the user. */
+  syncButtons(): void {
+    const buttons = this.settings.toolbarButtons;
+    const wantCover = buttons === "both" || buttons === "immersive";
+    const wantSort = buttons === "both" || buttons === "sort";
+
     for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
       const bar = leaf.view.containerEl.querySelector<HTMLElement>(
         ".nav-buttons-container"
@@ -679,23 +838,41 @@ export default class ImmersiveFolderPlugin extends Plugin {
          behind the user's back. */
       const covering = this.settings.enabled;
       const sorting = this.dragSort.isActive();
+      /* The cover's second reason to be unavailable: no note open, so no
+         folder to immerse in. Read from the same place the cover reads its
+         focus, so "the button says you can" and "there is something to draw"
+         can never disagree.
+
+         Weighed only while the cover is off. Once it is up this button is the
+         way back out, and dimming it there would strand whoever closed their
+         last note with the mode still on. */
+      const noFile = !covering && !this.app.workspace.getActiveFile();
 
       /* Each mode dims the other's button while it is on, and puts the reason
          where the tooltip was. The button stays clickable on purpose: the
          notice is the fallback for the click that happens anyway, and a
          control that dims *and* goes dead reads as broken rather than as
-         waiting its turn. */
-      const cover = this.syncButton(bar, BUTTON_CLASS, ICON, covering, () =>
-        void this.toggle()
+         waiting its turn. The no-note case above is dimmed and answered the
+         same way, for the same reason — and because a tooltip alone says
+         nothing at all on a touch screen, where there is no hover to have. */
+      const cover = this.syncButton(
+        bar,
+        BUTTON_CLASS,
+        ICON,
+        wantCover,
+        covering,
+        () => void this.toggle()
       );
-      cover.toggleClass(DISABLED_CLASS, sorting);
-      cover.setAttribute(
+      cover?.toggleClass(DISABLED_CLASS, sorting || noFile);
+      cover?.setAttribute(
         "aria-label",
         sorting
           ? this.t.blockedBySort
-          : covering
-            ? this.t.ariaOn
-            : this.t.ariaOff
+          : noFile
+            ? this.t.needFile
+            : covering
+              ? this.t.ariaOn
+              : this.t.ariaOff
       );
 
       /* An axis with arrows at both ends: the button is a switch, not
@@ -705,11 +882,12 @@ export default class ImmersiveFolderPlugin extends Plugin {
         bar,
         SORT_BUTTON_CLASS,
         SORT_ICON,
+        wantSort,
         sorting,
         () => this.toggleSortMode()
       );
-      sort.toggleClass(DISABLED_CLASS, covering);
-      sort.setAttribute(
+      sort?.toggleClass(DISABLED_CLASS, covering);
+      sort?.setAttribute(
         "aria-label",
         covering
           ? this.t.blockedByCover
@@ -724,10 +902,18 @@ export default class ImmersiveFolderPlugin extends Plugin {
     bar: HTMLElement,
     cls: string,
     icon: string,
+    wanted: boolean,
     active: boolean,
     onClick: () => void
-  ): HTMLElement {
+  ): HTMLElement | null {
     let button = bar.querySelector<HTMLElement>(`.${cls}`);
+    /* Turning a button off in settings has to take effect now rather than at
+       the next restart, so an unwanted button is torn down here — skipping
+       the creation branch alone would leave the existing one sitting there. */
+    if (!wanted) {
+      button?.remove();
+      return null;
+    }
     if (!button) {
       button = bar.createDiv({
         cls: `clickable-icon nav-action-button ${cls}`,
@@ -765,8 +951,8 @@ export default class ImmersiveFolderPlugin extends Plugin {
   }
 
   private removeButtons(): void {
-    for (const el of Array.from(
-      activeDocument.querySelectorAll(`.${BUTTON_CLASS}, .${SORT_BUTTON_CLASS}`)
+    for (const el of this.explorerQuery(
+      `.${BUTTON_CLASS}, .${SORT_BUTTON_CLASS}`
     )) {
       el.remove();
     }
@@ -800,9 +986,28 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         },
       },
       {
-        name: t.trail,
-        desc: t.trailDesc,
-        control: { type: "toggle", key: "revealTrail" },
+        name: t.toolbar,
+        desc: t.toolbarDesc,
+        control: {
+          type: "dropdown",
+          key: "toolbarButtons",
+          options: {
+            both: t.toolbarBoth,
+            immersive: t.toolbarImmersive,
+            sort: t.toolbarSort,
+            none: t.toolbarNone,
+          },
+        },
+      },
+      {
+        /* Only worth a row once something is actually hidden. `visible` is
+           re-read on every render, and the setter below calls update(), so
+           this row appears and leaves with the choice above it. */
+        name: t.hotkeyName,
+        desc: t.hotkeyDesc,
+        visible: () => this.plugin.settings.toolbarButtons !== "both",
+        action: () =>
+          openHotkeySettings(this.app, this.plugin.manifest.name),
       },
       {
         name: t.keepInView,
@@ -845,12 +1050,17 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
            written here. */
         await plugin.applyCollapseOthers(Boolean(value));
         return;
-      case "revealTrail":
-        plugin.settings.revealTrail = Boolean(value);
-        break;
       case "keepActiveInView":
+
         plugin.settings.keepActiveInView = Boolean(value);
         break;
+      case "toolbarButtons":
+        plugin.settings.toolbarButtons = value as ToolbarButtons;
+        await plugin.saveSettings();
+        plugin.syncButtons();
+        /* The hotkey row hangs off this value, so the page has to re-read it. */
+        this.update();
+        return;
       default:
         return;
     }

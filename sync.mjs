@@ -24,6 +24,14 @@ const TARGETS = process.env.OBSIDIAN_PLUGIN_DIR
         id
       ),
       join(iCloud, "com~apple~CloudDocs/TestVault/.obsidian/plugins", id),
+      /* The vault acceptance actually happens in. Leaving it out cost two
+         separate rounds of "the change did not take" — the copy landed in the
+         other two vaults while the one being watched kept running old code. */
+      join(
+        iCloud,
+        "iCloud~md~obsidian/Documents/kepano-obsidian-main/.obsidian/plugins",
+        id
+      ),
     ];
 
 const done = [];

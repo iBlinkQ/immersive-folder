@@ -21,10 +21,14 @@
 
 import { nameOf, parentKey } from "./order";
 
-/* activeDocument, never document: Obsidian can pop a sidebar out into its own
-   window, and the file tree then lives in that window's document. A plain
-   `document` query would come back empty there and the whole mode would
-   quietly do nothing. */
+/* Never a bare `document`, and never `activeDocument` either. Obsidian can
+   pop a sidebar out into a window of its own, so a plain `document` query
+   comes back empty there and the whole mode quietly does nothing; and
+   `activeDocument` follows the *focused window* rather than the tree, so
+   opening Settings (its own window in 1.13) or clicking into a popped-out
+   note pointed every query below at a document with no file list in it. Both
+   are answered the same way: the host names the documents that actually hold
+   an explorer, and everything here sweeps those. */
 const ROW = ".tree-item-self[data-path]";
 /* The box a row actually occupies in the layout. For a folder it wraps the
    folder together with its children, which is why the settle animation moves
@@ -93,6 +97,11 @@ export interface DragSortHost {
   /* The tooltip a row carries while the mode is on. A function rather than a
      string so a language change is picked up on the next pass. */
   hint(): string;
+  /* Every document with a file explorer in it. A function, and asked afresh
+     on each pass, because only the host can put the question to the workspace
+     and because the answer changes: a pane can be popped into a new window
+     while the mode is open. */
+  documents(): Document[];
   /* Whether this row takes part at all — which, as the host has it, means
      "is this a folder". A row that does not take part gets no grip: a handle
      that cannot be used is worse than none, and its absence is what tells the
@@ -121,15 +130,15 @@ export class DragSort {
   /* The explorer builds and discards rows as you scroll, so a row can appear
      at any moment and has to arrive already carrying its grip. */
   private readonly observer = new MutationObserver(() => this.decorate());
-  /* The document the listeners went on, kept so they come off the same one.
-     activeDocument can change while the mode is open — the user pops a pane
-     out, or focuses another window — and removing from whatever is active at
-     that later moment would leave the originals attached forever.
+  /* The documents the listeners went on, kept so they come off the same ones.
+     What holds an explorer can change while the mode is open — the user pops
+     a pane out, or docks one back — and removing from whatever the answer is
+     at that later moment would leave the originals attached forever.
 
      This is also why registerDomEvent is not used here despite being the
      convention: it detaches on plugin unload, but these have to come and go
-     with the mode, and to follow whichever document the explorer is in. */
-  private boundDoc: Document | null = null;
+     with the mode, and to follow whichever documents the explorer is in. */
+  private boundDocs: Document[] = [];
   /* Every row that has been given a grip, kept because querying the document
      on the way out is not enough: the explorer recycles rows as you scroll,
      and a row scrolled out of view is gone from the document while its
@@ -166,14 +175,14 @@ export class DragSort {
     /* Capture phase throughout: Obsidian listens for these further out, and
        capture runs outermost-first, so anything bound to the container itself
        can be cut off before it is ever reached. */
-    const doc = activeDocument;
-    this.boundDoc = doc;
+    this.boundDocs = this.host.documents();
     const opts = { capture: true };
-    doc.addEventListener("dragstart", this.onDragStart, opts);
-    doc.addEventListener("dragover", this.onDragOver, opts);
-    doc.addEventListener("dragenter", this.onDragOver, opts);
-    doc.addEventListener("drop", this.onDrop, opts);
-    doc.addEventListener("dragend", this.onDragEnd, opts);
+    for (const doc of this.boundDocs) {
+      doc.addEventListener("dragstart", this.onDragStart, opts);
+      doc.addEventListener("dragover", this.onDragOver, opts);
+      doc.addEventListener("dragenter", this.onDragOver, opts);
+      doc.addEventListener("drop", this.onDrop, opts);
+      doc.addEventListener("dragend", this.onDragEnd, opts);
     /* Clicking and the context menu are both off while sorting. The grip sits
        where the collapse arrow was, so a click would fold the tree under the
        pointer or open a note — both move the ground while you are arranging
@@ -181,8 +190,9 @@ export class DragSort {
        starts with a long press, and the long press raises the file menu at
        the same time, so letting go lands you in a menu instead of finishing
        the drag. */
-    doc.addEventListener("click", this.onSuppress, opts);
-    doc.addEventListener("contextmenu", this.onSuppress, opts);
+      doc.addEventListener("click", this.onSuppress, opts);
+      doc.addEventListener("contextmenu", this.onSuppress, opts);
+    }
 
     this.decorate();
   }
@@ -190,9 +200,8 @@ export class DragSort {
   private stop(): void {
     this.observer.disconnect();
 
-    const doc = this.boundDoc;
-    if (doc) {
-      const opts = { capture: true };
+    const opts = { capture: true };
+    for (const doc of this.boundDocs) {
       doc.removeEventListener("dragstart", this.onDragStart, opts);
       doc.removeEventListener("dragover", this.onDragOver, opts);
       doc.removeEventListener("dragenter", this.onDragOver, opts);
@@ -200,8 +209,8 @@ export class DragSort {
       doc.removeEventListener("dragend", this.onDragEnd, opts);
       doc.removeEventListener("click", this.onSuppress, opts);
       doc.removeEventListener("contextmenu", this.onSuppress, opts);
-      this.boundDoc = null;
     }
+    this.boundDocs = [];
 
     this.clear();
     this.undecorate();
@@ -246,7 +255,10 @@ export class DragSort {
           continue;
         }
 
-        const slot = activeDocument.createElement("div");
+        /* The row's own document, not the host's first: a row always knows
+           which window it is in, and creating the element anywhere else would
+           make it a foreign node the moment it is inserted. */
+        const slot = row.ownerDocument.createElement("div");
         slot.className = `tree-item-icon collapse-icon ${HANDLE_CLASS}`;
         slot.setAttribute(INJECTED_ATTR, "");
         row.prepend(slot);
@@ -264,18 +276,23 @@ export class DragSort {
     }
     this.decorated.clear();
 
-    /* Then a sweep of the document, in case anything was decorated by a pass
+    /* Then a sweep of the documents, in case anything was decorated by a pass
        whose row has since been replaced by a different element. */
-    for (const el of Array.from(
-      activeDocument.querySelectorAll<HTMLElement>(`.${HANDLE_CLASS}`)
-    )) {
+    for (const el of this.sweep(`.${HANDLE_CLASS}`)) {
       this.removeHandle(el);
     }
-    for (const row of Array.from(
-      activeDocument.querySelectorAll<HTMLElement>(`[${LABELLED_ATTR}]`)
-    )) {
+    for (const row of this.sweep(`[${LABELLED_ATTR}]`)) {
       this.clearHint(row);
     }
+  }
+
+  /* One selector, across every document the host says holds a tree. */
+  private sweep(selector: string): HTMLElement[] {
+    const found: HTMLElement[] = [];
+    for (const doc of this.host.documents()) {
+      found.push(...Array.from(doc.querySelectorAll<HTMLElement>(selector)));
+    }
+    return found;
   }
 
   private clearHint(row: HTMLElement): void {
@@ -472,9 +489,7 @@ export class DragSort {
   }
 
   private unmark(): void {
-    for (const el of Array.from(
-      activeDocument.querySelectorAll<HTMLElement>(`[${DROP_ATTR}]`)
-    )) {
+    for (const el of this.sweep(`[${DROP_ATTR}]`)) {
       el.removeAttribute(DROP_ATTR);
     }
   }
@@ -483,11 +498,7 @@ export class DragSort {
     this.unmark();
     this.landing = null;
 
-    for (const el of Array.from(
-      activeDocument.querySelectorAll<HTMLElement>(
-        `.${DRAGGING_CLASS}, .${TARGET_CLASS}`
-      )
-    )) {
+    for (const el of this.sweep(`.${DRAGGING_CLASS}, .${TARGET_CLASS}`)) {
       el.removeClass(DRAGGING_CLASS);
       el.removeClass(TARGET_CLASS);
     }
@@ -500,7 +511,7 @@ export class DragSort {
   }
 
   private containers(): HTMLElement[] {
-    return Array.from(activeDocument.querySelectorAll<HTMLElement>(CONTAINER));
+    return this.sweep(CONTAINER);
   }
 }
 
@@ -534,10 +545,13 @@ export class DragSort {
  * two compose instead of overwriting each other and the animation does not
  * have to stop the mode's idle motion to play.
  */
-export function animateReorder(apply: () => void): void {
-  const items = Array.from(
-    activeDocument.querySelectorAll<HTMLElement>(`${CONTAINER} ${ITEM}`)
-  );
+export function animateReorder(docs: Document[], apply: () => void): void {
+  const items: HTMLElement[] = [];
+  for (const doc of docs) {
+    items.push(
+      ...Array.from(doc.querySelectorAll<HTMLElement>(`${CONTAINER} ${ITEM}`))
+    );
+  }
 
   /* End any animation still in flight before measuring, or the "before"
      positions are the offsets of the last one rather than where the items
@@ -589,7 +603,8 @@ export function animateReorder(apply: () => void): void {
      that happened as you switched away would leave every row frozen at its
      old offset with no callback ever coming to release them. A forced reflow
      runs regardless. */
-  void activeDocument.body.offsetHeight;
+  for (const doc of docs) void doc.body.offsetHeight;
+
 
   const ms = settleMs(furthest);
   for (const item of moved) {
