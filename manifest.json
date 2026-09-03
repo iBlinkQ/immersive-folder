@@ -3,7 +3,7 @@
   "name": "Immersive Folder",
   "version": "0.4.1",
   "minAppVersion": "1.13.0",
-  "description": "Covers every folder but the one you are working in with skeleton bars, and lets you arrange the folders by hand.",
+  "description": "While you're working in a folder, one click hides everything else and keeps just that folder's notes in view. Also lets you drag folders into your own order instead of naming them 01_Inbox, 02_Projects to line them up.",
   "author": "iBlinkQ",
   "authorUrl": "https://github.com/iBlinkQ",
   "isDesktopOnly": false
