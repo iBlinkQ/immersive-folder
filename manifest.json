@@ -1,7 +1,7 @@
 {
   "id": "immersive-folder",
   "name": "Immersive Folder",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "minAppVersion": "1.13.0",
   "description": "While you're working in a folder, one click hides everything else and keeps just that folder's notes in view. Also lets you drag folders into your own order instead of naming them 01_Inbox, 02_Projects to line them up.",
   "author": "iBlinkQ",
