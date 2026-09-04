@@ -3,5 +3,8 @@ main.js
 *.js.map
 .DS_Store
 
-# Project Cairn knowledge layer — cairn init, git_policy: ignore
+# Local working files, not part of the plugin
+CLAUDE.md
+AGENTS.md
+.cairn/
 cairn/
