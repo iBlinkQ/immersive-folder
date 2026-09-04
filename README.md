@@ -1,6 +1,6 @@
 # Immersive Folder
 
-English · [简体中文](README.zh-CN.md)
+English · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 An Obsidian plugin. While you are working in a folder, one click narrows the
 file explorer to that folder's notes and covers everything else up until you

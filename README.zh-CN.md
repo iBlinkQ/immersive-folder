@@ -1,6 +1,6 @@
 # Immersive Folder
 
-[English](README.md) · 简体中文
+[English](README.md) · 简体中文 · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 一个 Obsidian 插件。你在某个文件夹里工作时，可以一键只专注于这个文件夹中的笔记，
 其他内容被暂时遮住。以及你可以直接拖动文件夹调整顺序，不必再靠 `01_收件箱`、
