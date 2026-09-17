@@ -39,7 +39,7 @@ The state is remembered across restarts.
 Press the up-and-down arrow button at the top of the file explorer. Every
 folder lifts a little and grows a handle, and from there you drag folders into
 the order you want. Changes are saved as you make them, and pressing the button
-again leaves the mode.
+again — or Escape — leaves the mode.
 
 ![with folder arrange mode on, dragging a folder changes where it sits among its sibling folders](docs/arrange.gif)
 

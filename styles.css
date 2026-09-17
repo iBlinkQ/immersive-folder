@@ -6,9 +6,15 @@
    not on source order. */
 
 body {
-  /* Override either of these in a snippet to pitch the bars to your theme. */
+  /* Override any of these in a snippet to pitch the bars to your theme. The
+     last one is the far end of the fade: the faintest a bar is ever drawn,
+     for the rows furthest from what you are reading. It is deliberately not
+     0 — a bar that disappears takes the shape of the list with it, and the
+     list is how you find your way back out. Set it to 1 to switch the fade
+     off and have every bar drawn alike, the way this cover used to look. */
   --immersive-folder-bar: var(--background-modifier-border);
   --immersive-folder-bar-opacity: 1;
+  --immersive-folder-bar-opacity-far: 0.2;
 }
 
 /* Either button carries an accent wash while its mode is on. Obsidian's own
@@ -46,6 +52,85 @@ body {
 
 /* ── The cover ─────────────────────────────────────────────────────────── */
 
+/* The further a row sits from the folder in focus, the fainter its bar. The
+   plugin measures that distance against the length of the list and puts one
+   of ten shades on the row; these are the only place a shade becomes an
+   opacity. Rows with no shade
+   class — the readable block and everything next to it — resolve the fallback
+   0 and come out at full strength.
+
+   Both marks on a row read the same figure, so a folder's icon placeholder
+   recedes in step with its bar instead of staying put while the bar leaves. */
+.immersive-folder-on .nav-files-container .tree-item-self {
+  --immersive-folder-bar-alpha: calc(
+    var(--immersive-folder-bar-opacity) +
+      (
+        var(--immersive-folder-bar-opacity-far) -
+          var(--immersive-folder-bar-opacity)
+      ) * var(--immersive-folder-fade, 0)
+  );
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-1 {
+  --immersive-folder-fade: 0.1;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-2 {
+  --immersive-folder-fade: 0.2;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-3 {
+  --immersive-folder-fade: 0.3;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-4 {
+  --immersive-folder-fade: 0.4;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-5 {
+  --immersive-folder-fade: 0.5;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-6 {
+  --immersive-folder-fade: 0.6;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-7 {
+  --immersive-folder-fade: 0.7;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-8 {
+  --immersive-folder-fade: 0.8;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-9 {
+  --immersive-folder-fade: 0.9;
+}
+
+.immersive-folder-on
+  .nav-files-container
+  .tree-item-self.immersive-folder-fade-10 {
+  --immersive-folder-fade: 1.0;
+}
+
 .immersive-folder-on .nav-files-container .tree-item-self .tree-item-inner {
   position: relative;
   color: transparent;
@@ -62,7 +147,7 @@ body {
   max-width: 9em;
   border-radius: 2px;
   background-color: var(--immersive-folder-bar);
-  opacity: var(--immersive-folder-bar-opacity);
+  opacity: var(--immersive-folder-bar-alpha);
 }
 
 /* Three widths, so a column of bars reads as a list rather than a barcode.
@@ -97,7 +182,7 @@ body {
   inset: 1px;
   border-radius: 3px;
   background-color: var(--immersive-folder-bar);
-  opacity: var(--immersive-folder-bar-opacity);
+  opacity: var(--immersive-folder-bar-alpha);
 }
 
 /* The file-type tag is a word, so it goes the way the labels do. The collapse

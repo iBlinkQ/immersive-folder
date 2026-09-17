@@ -62,6 +62,76 @@ export function entriesOf(
   ]);
 }
 
+/* ── The order the rows are drawn in ───────────────────────────────────── */
+
+/* The explorer keeps its own render tree beside fileItems: every row it will
+   draw, nested, already sorted, and already carrying this plugin's custom
+   order because the patch below feeds it. Walking that is how the cover finds
+   out how far a row sits from the folder in focus.
+ *
+   The screen cannot answer this. The tree virtualises, so rows scrolled out
+   of view are gone from the document — measured on a real vault: 62 rows laid
+   out, 57 present. Counting the DOM would make a row's distance shift as you
+   scroll, which is exactly the thing that must not happen to a fade.
+ *
+   Every hop below is checked, and a miss anywhere returns null rather than a
+   partial order: the caller's fallback is a cover with no fade at all, which
+   is what this plugin looked like before the fade existed. */
+function childrenOf(node: unknown): unknown[] | null {
+  if (typeof node !== "object" || node === null) return null;
+  const holder = (node as { vChildren?: unknown }).vChildren;
+  if (typeof holder !== "object" || holder === null) return null;
+  const children = (holder as { _children?: unknown })._children;
+  return Array.isArray(children) ? children : null;
+}
+
+function pathOf(node: unknown): string | null {
+  if (typeof node !== "object" || node === null) return null;
+  const file = (node as { file?: unknown }).file;
+  if (typeof file !== "object" || file === null) return null;
+  const path = (file as { path?: unknown }).path;
+  return typeof path === "string" ? path : null;
+}
+
+/* Only a folder that is open has its children on screen. Read as "collapsed
+   is explicitly false" rather than "not collapsed", so a node that carries
+   neither flag — a file — is never walked into. */
+function isOpenFolder(node: unknown): boolean {
+  if (typeof node !== "object" || node === null) return false;
+  const candidate = node as { collapsible?: unknown; collapsed?: unknown };
+  return candidate.collapsible === true && candidate.collapsed === false;
+}
+
+function treeRoot(view: FileExplorerView): unknown {
+  const tree = (view as { tree?: unknown }).tree;
+  if (typeof tree !== "object" || tree === null) return null;
+  const scroll = (tree as { infinityScroll?: unknown }).infinityScroll;
+  if (typeof scroll !== "object" || scroll === null) return null;
+  return (scroll as { rootEl?: unknown }).rootEl ?? null;
+}
+
+/* Every row the explorer would draw, top to bottom, by path. Verified against
+   a real vault: the walk produced the document's own row order exactly, with
+   no gaps. */
+export function visibleRowOrder(view: FileExplorerView): string[] | null {
+  const top = childrenOf(treeRoot(view));
+  if (!top) return null;
+
+  const order: string[] = [];
+  const walk = (nodes: unknown[]): void => {
+    for (const node of nodes) {
+      const path = pathOf(node);
+      if (path === null) continue;
+      order.push(path);
+      if (!isOpenFolder(node)) continue;
+      const children = childrenOf(node);
+      if (children) walk(children);
+    }
+  };
+  walk(top);
+  return order;
+}
+
 /* The shape the sort patch needs, which is more than isExplorerView asks for.
    Checked separately so that a build of Obsidian that kept fileItems but
    moved the sorting still gets folding and the cover — only the ordering

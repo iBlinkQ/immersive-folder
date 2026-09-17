@@ -107,6 +107,10 @@ export interface DragSortHost {
      that cannot be used is worse than none, and its absence is what tells the
      user which layer this mode is about. */
   canDrag(row: HTMLElement): boolean;
+  /* Shut the mode down from the inside — what Escape asks for. The mode is
+     the host's to hold, so this reports rather than acts: DragSort cannot
+     switch off the button that says the mode is on. */
+  leave(): void;
   /* Move `moving` to sit before or after `target`, both child names of
      `folderPath`. Called once, after the pointer is released. */
   commit(
@@ -115,6 +119,20 @@ export interface DragSortHost {
     target: string,
     position: "before" | "after"
   ): void;
+}
+
+/* Where Escape belongs to whatever is being typed rather than to this mode. */
+const TYPING = 'input, textarea, [contenteditable="true"], .cm-editor';
+
+/* `instanceof Element` is bound to one realm: a window popped out of the
+   workspace is opened with window.open, which gives it its own Element — so a
+   target from that window fails the check against this one and the handler
+   quietly does nothing there. Asking whether the target can answer closest()
+   is the same question with the realm left out of it. */
+function closestTo(target: EventTarget | null, selector: string): boolean {
+  const node = target as { closest?: (s: string) => unknown } | null;
+  if (typeof node?.closest !== "function") return false;
+  return node.closest(selector) !== null;
 }
 
 interface Landing {
@@ -192,6 +210,7 @@ export class DragSort {
        the drag. */
       doc.addEventListener("click", this.onSuppress, opts);
       doc.addEventListener("contextmenu", this.onSuppress, opts);
+      doc.addEventListener("keydown", this.onKeyDown, opts);
     }
 
     this.decorate();
@@ -209,6 +228,7 @@ export class DragSort {
       doc.removeEventListener("dragend", this.onDragEnd, opts);
       doc.removeEventListener("click", this.onSuppress, opts);
       doc.removeEventListener("contextmenu", this.onSuppress, opts);
+      doc.removeEventListener("keydown", this.onKeyDown, opts);
     }
     this.boundDocs = [];
 
@@ -319,6 +339,32 @@ export class DragSort {
 
     event.preventDefault();
     event.stopPropagation();
+  };
+
+  /* Escape leaves the mode. You get in with a button, and a mode that can
+     only be left the way it was entered makes you carry the pointer back
+     across the screen to a target the size of a stamp.
+   *
+     Two things it stays out of. Mid-drag it does nothing: the browser's own
+     Escape cancels a drag in flight, and one key that both drops what you are
+     holding and shuts the mode would make backing out of a misjudged drag
+     cost you the mode as well. And Escape raised inside anything you can type
+     into is left alone, where the key is already spoken for — an editor's
+     vim mode, an open suggestion list, a rename box on a row of this very
+     tree.
+   *
+     Immersive mode gets no equivalent on purpose. It is a state you leave
+     switched on for as long as the screen is being shared, not a step you are
+     part-way through, and a stray Escape uncovering a vault mid-call is not
+     a mistake worth being one keystroke away from. */
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (this.source) return;
+    if (closestTo(event.target, TYPING)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.host.leave();
   };
 
   private readonly onDragStart = (event: DragEvent): void => {

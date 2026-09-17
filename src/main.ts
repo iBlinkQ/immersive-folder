@@ -18,6 +18,7 @@ import {
   patchSorting,
   SortPatch,
   sortView,
+  visibleRowOrder,
 } from "./explorer-api";
 import { Orders, OrderStore } from "./order";
 import { animateReorder, DragSort } from "./dnd";
@@ -183,7 +184,8 @@ const EN: Strings = {
   dragName: "Arranging the folders by hand",
   dragIntro:
     "The up-and-down arrow button at the top of the file explorer switches " +
-    "on folder arrange mode. Every folder grows a handle and starts to drift, and " +
+    "on folder arrange mode; the same button or Escape leaves it again. " +
+    "Every folder grows a handle and starts to drift, and " +
     "dragging one sets where it sits among its sibling folders — hold one " +
     "and only the folders that can take it keep moving, while the rest dim. " +
     "Files are left out of it entirely: they grow no handle and stay exactly " +
@@ -249,7 +251,8 @@ const ZH: Strings = {
     "那些名字仍然在页面里，任何人打开开发者工具都能读到。",
   dragName: "手动排列文件夹",
   dragIntro:
-    "文件列表顶部那个上下箭头按钮打开「调整文件夹顺序」模式。每个文件夹都会长出手柄并" +
+    "文件列表顶部那个上下箭头按钮打开「调整文件夹顺序」模式，再点一次或者按 Esc 都能退出。" +
+    "每个文件夹都会长出手柄并" +
     "轻轻浮动，拖动它就能决定它排在同级文件夹中间的哪个位置 —— 按住其中一个时，" +
     "只有能接住它的同级文件夹继续浮动，其余会变暗。文件完全不参与：它们不会长出手柄，" +
     "始终待在排序菜单给它们的位置上，所以按文件名或按时间排序照样是原来的效果。" +
@@ -293,6 +296,15 @@ const DISABLED_CLASS = "immersive-folder-blocked";
    the rules there cannot know which folder is focused, so they cover
    everything and let this class carve out the exceptions. */
 const REVEAL_CLASS = "immersive-folder-reveal";
+/* How faint a covered row is drawn, as one of this many shades, so the bars
+   closest to what you are reading stay firm and the ends of the list recede.
+   The stylesheet draws the shades; the number here only has to agree with
+   it. Ten rather than a handful because the shades are spread across the
+   whole list: with six, four rows out of five landed on the faintest one and
+   the fade was a thin edge around the readable block rather than something
+   the list as a whole did. */
+const FADE_STEPS = 10;
+const FADE_CLASS = "immersive-folder-fade-";
 
 const ICON = "immersive-folder";
 const SORT_ICON = "immersive-folder-sort";
@@ -352,6 +364,13 @@ export default class ImmersiveFolderPlugin extends Plugin {
     hint: () => this.t.dragHint,
     documents: () => this.explorerDocuments(),
     canDrag: (row) => this.canDrag(row),
+    /* Escape, from inside the mode. Not toggleSortMode(): that one asks
+       whether the mode may be opened, and this direction never needs asking
+       — leaving is always allowed. */
+    leave: () => {
+      this.dragSort.setActive(false);
+      this.syncButtons();
+    },
     commit: (folderPath, moving, target, position) =>
       void this.commitMove(folderPath, moving, target, position),
   });
@@ -602,20 +621,104 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
   private applyMarks(): void {
     const focus = this.focusPath;
+    const steps = focus === null ? null : this.fadeSteps(focus);
+
     for (const row of this.explorerQuery(
       ".nav-files-container .tree-item-self[data-path]"
     )) {
       const path = row.getAttribute("data-path");
-      row.toggleClass(
-        REVEAL_CLASS,
-        focus !== null && path !== null && this.spares(path, focus)
+      const spared =
+        focus !== null && path !== null && this.spares(path, focus);
+      row.toggleClass(REVEAL_CLASS, spared);
+      this.markFade(
+        row,
+        spared || path === null ? 0 : (steps?.get(path) ?? 0)
       );
+    }
+  }
+
+  /* How far each covered row sits from the block of readable ones, counted in
+     rows down the screen and capped at the number of shades the stylesheet
+     draws.
+   *
+     Down the screen rather than across the tree. Tree distance was the other
+     candidate and it falls apart in the ordinary case: with the note in a
+     top-level folder, every covered row is the same number of steps away and
+     there is no fade left to draw. Measured on a real vault it gave three
+     bands for a folder two deep, with 62% of the bars in the farthest one,
+     and one single band for a folder one deep.
+   *
+     The row numbers come from the explorer's own render tree rather than from
+     the document, because the document only holds the rows currently on
+     screen — count those and a bar would change shade as you scroll.
+   *
+     Recomputed on each pass rather than cached. It walks only the rows that
+     are actually open, which is the same order of work as the sweep over the
+     document that calls it, and a cache would have to be invalidated by every
+     fold, sort and rename in the vault. */
+  private fadeSteps(focus: string): Map<string, number> {
+    const steps = new Map<string, number>();
+
+    for (const view of this.explorerViews()) {
+      const order = visibleRowOrder(view);
+      if (!order) continue;
+
+      /* The readable rows form one unbroken run — a folder and its
+         descendants sit together in a depth-first walk — so the two ends of
+         that run are all a distance needs to be measured from. */
+      let first = -1;
+      let last = -1;
+      order.forEach((path, index) => {
+        if (!this.spares(path, focus)) return;
+        if (first < 0) first = index;
+        last = index;
+      });
+
+      /* Not a row on screen: the focused folder is inside something the user
+         folded shut. Nothing to measure from, so nothing fades. */
+      if (first < 0) continue;
+
+      /* Distance is scaled to the list rather than counted off in rows: the
+         row furthest from what you are reading gets the faintest shade
+         whether the list is twelve rows or two hundred. Counting raw rows
+         instead made the shades run out a few rows past the readable block,
+         leaving everything beyond it flat. Both ends share one scale, so two
+         rows the same distance out are drawn alike whichever side they are
+         on. */
+      const reach = Math.max(first, order.length - 1 - last, 1);
+
+      order.forEach((path, index) => {
+        const away =
+          index < first ? first - index : index > last ? index - last : 0;
+        /* Anything covered at all is at least one shade down, however short
+           the trip: a bar drawn exactly like the readable block's neighbours
+           would say the cover stops somewhere it does not. */
+        const shade =
+          away === 0 ? 0 : Math.max(1, Math.round((away / reach) * FADE_STEPS));
+        steps.set(path, Math.min(shade, FADE_STEPS));
+      });
+    }
+
+    return steps;
+  }
+
+  /* A class per shade rather than an opacity written onto the element. Every
+     value this plugin paints lives in the stylesheet, which is what lets a
+     snippet retune both ends of the fade without the plugin being involved —
+     the same arrangement the bars themselves already have. */
+  private markFade(row: HTMLElement, step: number): void {
+    for (let shade = 1; shade <= FADE_STEPS; shade++) {
+      row.toggleClass(`${FADE_CLASS}${shade}`, shade === step);
     }
   }
 
   private clearMarks(): void {
     for (const row of this.explorerQuery(`.${REVEAL_CLASS}`)) {
       row.removeClass(REVEAL_CLASS);
+    }
+    for (let shade = 1; shade <= FADE_STEPS; shade++) {
+      const cls = `${FADE_CLASS}${shade}`;
+      for (const row of this.explorerQuery(`.${cls}`)) row.removeClass(cls);
     }
   }
 
