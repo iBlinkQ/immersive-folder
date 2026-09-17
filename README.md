@@ -81,6 +81,12 @@ except the one you are in. Less to scroll past, and it stops the bars from
 giving away how many files the other folders hold. Whatever was open is put
 back when you leave immersive mode. On by default.
 
+**Keep everything inside this folder readable** — the cover spares the folder
+you are in and whatever sits directly in it. Switch this on and it spares the
+rest of the way down as well: open a subfolder and its contents read normally
+instead of turning into bars. Everything outside the folder you are in, the
+folders above it included, is covered either way. On by default.
+
 ## What it does not do
 
 **This is a visual cover, not encryption.** The names are still in the page,

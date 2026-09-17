@@ -39,6 +39,10 @@ interface ImmersiveFolderSettings {
   enabled: boolean;
   keepActiveInView: boolean;
   collapseOthers: boolean;
+  /* How far down the cover reaches: with this on it spares everything inside
+     the focused folder however deep, instead of only the row sitting directly
+     in it. See spares(). */
+  revealSubfolders: boolean;
   /* Which folders were open before the tree was folded down, so leaving
      immersive mode can hand the explorer back the way it was found. */
   expandedBefore: string[];
@@ -78,6 +82,7 @@ const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   enabled: false,
   keepActiveInView: true,
   collapseOthers: true,
+  revealSubfolders: true,
   expandedBefore: [],
   orders: {},
 };
@@ -107,6 +112,8 @@ interface Strings {
   keepInViewDesc: string;
   collapse: string;
   collapseDesc: string;
+  revealInside: string;
+  revealInsideDesc: string;
   disclaimer: string;
   dragName: string;
   dragIntro: string;
@@ -162,6 +169,13 @@ const EN: Strings = {
     "Less to scroll past, and it stops the bars from giving away how many " +
     "files the other folders hold. Whatever was open is restored when you " +
     "leave immersive mode.",
+  revealInside: "Keep everything inside this folder readable",
+  revealInsideDesc:
+    "The cover spares the folder you are in and whatever sits directly in " +
+    "it. Switch this on and it spares the rest of the way down as well: " +
+    "open a subfolder and its contents read normally instead of turning " +
+    "into bars. Everything outside the folder you are in, the folders above " +
+    "it included, is covered either way.",
   disclaimer:
     "Immersive folder is a visual cover, not encryption. It is built for " +
     "screen sharing, recordings and the person sitting next to you — the " +
@@ -225,6 +239,11 @@ const ZH: Strings = {
     "每次切换时，把除当前文件夹之外的都折叠起来。既少了要滚过的内容，" +
     "也堵上了骨架条泄露「其他文件夹里有多少文件」这个口子。" +
     "退出沉浸模式时，原本展开的会照原样还给你。",
+  revealInside: "显示当前文件夹里的所有层级",
+  revealInsideDesc:
+    "开启沉浸模式后，当前文件夹里不管展开到第几层，文件名和文件夹名都照常显示。" +
+    "关掉这一项，就只显示直接放在它里面的文件和文件夹，再往里展开一层又是骨架条。" +
+    "当前文件夹以外不受影响，上层和旁边的文件夹一律遮住。",
   disclaimer:
     "沉浸模式是视觉遮挡，不是加密。它是为投屏、录屏和你旁边那个人准备的 —— " +
     "那些名字仍然在页面里，任何人打开开发者工具都能读到。",
@@ -600,9 +619,19 @@ export default class ImmersiveFolderPlugin extends Plugin {
     }
   }
 
-  /* Which rows keep their real name: the focused folder itself, and its direct
-     children — one segment further down and no deeper. Everything else goes
-     under a bar, the folders *above* the focused one included.
+  /* Which rows keep their real name: the focused folder itself, and what is
+     inside it. Everything else goes under a bar, the folders *above* the
+     focused one included.
+   *
+     How far "inside" reaches is the one thing here that is a preference.
+     `revealSubfolders` on — the default — means the whole subtree: open a
+     subfolder next to the note you are in and you can read what is in it,
+     because you opened it on purpose and it is part of the folder you are
+     working in. Off is the older, tighter rule: the direct children only, one
+     segment down and no deeper, so anything you open below that goes back
+     under bars. Note what the loose rule means at the vault root, where the
+     focused folder *is* the whole vault: there is nothing outside it left to
+     cover, and only "collapse every other folder" keeps the tree down.
    *
      That last part was a setting once, defaulting to on. It is not one any
      more, because a top-level folder name is usually the most telling thing on
@@ -614,12 +643,14 @@ export default class ImmersiveFolderPlugin extends Plugin {
      Comparing paths rather than walking the DOM means a row is judged the
      moment it is created, however the explorer chose to nest it. */
   private spares(path: string, focus: string): boolean {
-    /* Focused on the vault root: its own rows are the ones with no separator
-       anywhere in their path. */
-    if (focus === "") return !path.includes("/");
+    const deep = this.settings.revealSubfolders;
+    /* Focused on the vault root: everything is inside it, so the tight rule
+       falls back to "no separator anywhere in the path" — the top level and
+       nothing under it. */
+    if (focus === "") return deep || !path.includes("/");
     if (path === focus) return true;
     if (path.startsWith(`${focus}/`)) {
-      return !path.slice(focus.length + 1).includes("/");
+      return deep || !path.slice(focus.length + 1).includes("/");
     }
     return false;
   }
@@ -1019,6 +1050,11 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         desc: t.collapseDesc,
         control: { type: "toggle", key: "collapseOthers" },
       },
+      {
+        name: t.revealInside,
+        desc: t.revealInsideDesc,
+        control: { type: "toggle", key: "revealSubfolders" },
+      },
       { name: t.dragName, desc: t.dragIntro },
       { name: t.disclaimerName, desc: t.disclaimer },
     ];
@@ -1053,6 +1089,11 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
       case "keepActiveInView":
 
         plugin.settings.keepActiveInView = Boolean(value);
+        break;
+      case "revealSubfolders":
+        /* Nothing to fold or scroll — which rows are spared is recomputed on
+           the redraw saveSettings() already runs. */
+        plugin.settings.revealSubfolders = Boolean(value);
         break;
       case "toolbarButtons":
         plugin.settings.toolbarButtons = value as ToolbarButtons;
