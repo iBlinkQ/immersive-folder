@@ -335,6 +335,27 @@ body {
   cursor: default;
 }
 
+/* ── The way out ───────────────────────────────────────────────────────── */
+
+/* The line under the toolbar saying Escape leaves. A sibling of the tree, not
+   part of it — see signpost() in dnd.ts — so it is laid out as one more row
+   of the explorer's column and never scrolls. Quiet on purpose: it is a
+   reminder, read once, and should not pull the eye off the folders. */
+.immersive-folder-sort-hint {
+  flex: 0 0 auto;
+  padding: 0 var(--size-4-2) var(--size-4-2);
+  text-align: center;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* Sized to the line around it rather than to code: themes pitch kbd for
+   prose, and a key chip taller than its sentence looks like a button. */
+.immersive-folder-sort-hint kbd {
+  font-size: inherit;
+}
+
 /* ── While a row is held ───────────────────────────────────────────────── */
 
 /* Everything holds still the moment a row is picked up. The drift says "this

@@ -52,6 +52,11 @@ export const TARGET_CLASS = "immersive-folder-drop-target";
    element created for it when it has none. */
 export const HANDLE_CLASS = "immersive-folder-handle";
 const INJECTED_ATTR = "data-immersive-folder-handle";
+/* Above the tree: the way out. The attribute holds the text it was last
+   built from, so a pass with nothing new to say leaves it alone. */
+export const EXIT_HINT_CLASS = "immersive-folder-sort-hint";
+const EXIT_HINT_TEXT_ATTR = "data-immersive-folder-text";
+const EXIT_KEY = "{key}";
 const DROP_ATTR = "data-immersive-folder-drop";
 /* Rows carry no aria-label of their own, so setting one is safe and removing
    it on the way out leaves nothing behind. */
@@ -111,6 +116,10 @@ export interface DragSortHost {
      the host's to hold, so this reports rather than acts: DragSort cannot
      switch off the button that says the mode is on. */
   leave(): void;
+  /* The line above the tree saying how to leave, with `{key}` where the key
+     goes — or null for no line at all, which is the answer wherever there is
+     no Escape key to press. A function for the same reason as hint(). */
+  exitHint(): string | null;
   /* Move `moving` to sit before or after `target`, both child names of
      `folderPath`. Called once, after the pointer is released. */
   commit(
@@ -181,7 +190,9 @@ export class DragSort {
   /* Called after the explorer redraws, in case a pass rebuilt rows the
      observer has already stopped watching. */
   refresh(): void {
-    if (this.active) this.decorate();
+    if (!this.active) return;
+    this.decorate();
+    this.signpost();
   }
 
   private start(): void {
@@ -214,6 +225,7 @@ export class DragSort {
     }
 
     this.decorate();
+    this.signpost();
   }
 
   private stop(): void {
@@ -234,6 +246,7 @@ export class DragSort {
 
     this.clear();
     this.undecorate();
+    for (const el of this.sweep(`.${EXIT_HINT_CLASS}`)) el.remove();
     for (const container of this.containers()) {
       container.removeClass(MODE_CLASS);
       container.removeClass(DRAGGING_MODE_CLASS);
@@ -328,6 +341,50 @@ export class DragSort {
   private removeHandle(el: HTMLElement): void {
     if (el.hasAttribute(INJECTED_ATTR)) el.remove();
     else el.removeClass(HANDLE_CLASS);
+  }
+
+  /* ── The way out ────────────────────────────────────────────────────── */
+
+  /* One line between the toolbar and the tree saying that Escape leaves.
+     Escape is the quicker way out, and a key nothing on screen mentions is a
+     key only the people who read the settings page will ever press.
+   *
+     Outside the tree rather than at the top or bottom of it. The tree is a
+     virtual list that positions rows from its own measurements, and a line
+     it did not draw would sit in its way; it would also scroll off with the
+     rows. Out here it stays put, and it sits right under the button that
+     opened the mode, which is where the eye already is. */
+  private signpost(): void {
+    const text = this.host.exitHint();
+    for (const container of this.containers()) {
+      const parent = container.parentElement;
+      if (!parent) continue;
+
+      let hint = parent.querySelector<HTMLElement>(
+        `:scope > .${EXIT_HINT_CLASS}`
+      );
+      if (!text) {
+        hint?.remove();
+        continue;
+      }
+      if (!hint) {
+        /* createDiv on the parent, for the same reason as the grips: it
+           builds the line in the tree's own window. */
+        hint = parent.createDiv({ cls: EXIT_HINT_CLASS });
+        parent.insertBefore(hint, container);
+      }
+
+      /* Set every pass, like the row tooltips, so a language change is
+         picked up — but only rebuilt when the text has actually changed. */
+      if (hint.getAttribute(EXIT_HINT_TEXT_ATTR) === text) continue;
+      hint.setAttribute(EXIT_HINT_TEXT_ATTR, text);
+      hint.empty();
+      const [before, ...after] = text.split(EXIT_KEY);
+      hint.appendText(before ?? "");
+      if (after.length === 0) continue;
+      hint.createEl("kbd", { text: "Esc" });
+      hint.appendText(after.join(EXIT_KEY));
+    }
   }
 
   /* ── The drag ───────────────────────────────────────────────────────── */

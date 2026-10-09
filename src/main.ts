@@ -2,6 +2,7 @@ import {
   addIcon,
   App,
   Notice,
+  Platform,
   Plugin,
   PluginSettingTab,
   SettingDefinitionItem,
@@ -129,6 +130,8 @@ interface Strings {
   sortModeOff: string;
   sortCommand: string;
   dragHint: string;
+  /* The line above the tree while arranging; `{key}` is drawn as the key. */
+  sortExitHint: string;
   /* Nothing open, so nothing to immerse in. */
   needFile: string;
   /* The two modes take turns, and each refusal says which one is in the way. */
@@ -212,6 +215,7 @@ const EN: Strings = {
   sortModeOn: "Done arranging",
   sortCommand: "Toggle folder arrange mode",
   dragHint: "Drag to reorder",
+  sortExitHint: "Press {key} when you are done",
   needFile: "Open a note first",
   blockedBySort: "Leave folder arrange mode first",
   blockedByCover: "Leave immersive folder first",
@@ -282,6 +286,7 @@ const ZH: Strings = {
   sortModeOn: "完成调整",
   sortCommand: "切换调整文件夹顺序模式",
   dragHint: "拖动调整排序",
+  sortExitHint: "按 {key} 完成调整",
   needFile: "请先打开一篇笔记",
   blockedBySort: "请先退出「调整文件夹顺序」模式",
 
@@ -390,6 +395,9 @@ export default class ImmersiveFolderPlugin extends Plugin {
       this.dragSort.setActive(false);
       this.syncButtons();
     },
+    /* Not on mobile: a phone has no Escape key, and a line naming one is
+       noise. The button is the way out there, as it always was. */
+    exitHint: () => (Platform.isMobile ? null : this.t.sortExitHint),
     commit: (folderPath, moving, target, position) =>
       void this.commitMove(folderPath, moving, target, position),
   });
