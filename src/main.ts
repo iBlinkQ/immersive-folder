@@ -329,6 +329,27 @@ const REVEAL_CLASS = "immersive-folder-reveal";
    the list as a whole did. */
 const FADE_STEPS = 10;
 const FADE_CLASS = "immersive-folder-fade-";
+/* On the body only while the cover is drawing itself in or lifting off, so
+   the sweep in styles.css plays on the switch and on nothing else — not on a
+   row scrolled into view a minute later, nor on the bars that change hands
+   when you move to a note in another folder. */
+const ENTERING_CLASS = "immersive-folder-entering";
+const LEAVING_CLASS = "immersive-folder-leaving";
+/* The prefix both of the sweep's keyframes share, which is how its
+   animations are told apart from everything else running in the window. */
+const SWEEP_ANIMATION = "immersive-folder-sweep";
+/* The longest a sweep is waited on, whatever the animations say. */
+const SWEEP_CAP_MS = 4000;
+
+interface Sweep {
+  way: "in" | "out";
+  /* The folder the cover was drawn around as the switch was thrown. On the
+     way out it stays drawn there — readable block and all — until the light
+     has crossed every bar; see redraw(). */
+  from: string | null;
+  /* Null until the sweep's first redraw has run and the wait has begun. */
+  timer: number | null;
+}
 
 const ICON = "immersive-folder";
 const SORT_ICON = "immersive-folder-sort";
@@ -410,6 +431,8 @@ export default class ImmersiveFolderPlugin extends Plugin {
      class then has to come off the one it left behind, which no query for
      "documents with an explorer in them" would still find. */
   private readonly painted = new Set<Document>();
+  /* The cover drawing itself in or lifting off, while it does. */
+  private sweep: Sweep | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -421,6 +444,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.register(() => this.removeButtons());
     this.register(() => this.releaseSorting());
     this.register(() => this.dragSort.setActive(false));
+    this.register(() => this.dropSweep());
 
     this.registerToggleCommand();
     this.registerSortCommand();
@@ -509,6 +533,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
     /* Force the next sync through: the file has not changed, but the tree
        around it is about to. */
     this.lastSyncedPath = null;
+    this.startSweep(turningOn ? "in" : "out");
     await this.saveSettings();
   }
 
@@ -569,8 +594,19 @@ export default class ImmersiveFolderPlugin extends Plugin {
     /* Nothing open means no folder to focus on. Covering the lot would leave
        a column of anonymous bars with no way to navigate out of it, so the
        cover lifts itself until something is open again. No focus, no body
-       class: the explorer is exactly as the theme drew it. */
-    this.focusPath = folder ? (folder.isRoot() ? "" : folder.path) : null;
+       class: the explorer is exactly as the theme drew it.
+     *
+       The one exception is a cover lifting off. The mode is already off and
+       the button already says so, but the bars are still on screen being
+       swept away, and the readable block has to stay readable under them —
+       so until the sweep is done the cover is drawn where it was. */
+    this.focusPath = folder
+      ? folder.isRoot()
+        ? ""
+        : folder.path
+      : this.sweep?.way === "out"
+        ? this.sweep.from
+        : null;
 
     this.paint();
     this.ensureSortPatched();
@@ -581,6 +617,7 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.dragSort.refresh();
     this.syncButtons();
     this.syncExplorer();
+    if (this.sweep && this.sweep.timer === null) this.timeSweep(this.sweep);
   }
 
   /* Every document that currently holds a file explorer.
@@ -618,20 +655,104 @@ export default class ImmersiveFolderPlugin extends Plugin {
 
     for (const doc of Array.from(this.painted)) {
       if (wanted && live.includes(doc)) continue;
-      doc.body.removeClass(BODY_CLASS);
+      doc.body.removeClass(BODY_CLASS, ENTERING_CLASS, LEAVING_CLASS);
       this.painted.delete(doc);
     }
     if (!wanted) return;
 
+    /* The sweep's class goes on in the same pass as the cover's, before
+       anything has had a chance to draw: arriving a frame later, it would
+       find every bar already in place and have nothing left to sweep in. */
     for (const doc of live) {
       doc.body.addClass(BODY_CLASS);
+      doc.body.toggleClass(ENTERING_CLASS, this.sweep?.way === "in");
+      doc.body.toggleClass(LEAVING_CLASS, this.sweep?.way === "out");
       this.painted.add(doc);
     }
   }
 
   private unpaint(): void {
-    for (const doc of this.painted) doc.body.removeClass(BODY_CLASS);
+    for (const doc of this.painted) {
+      doc.body.removeClass(BODY_CLASS, ENTERING_CLASS, LEAVING_CLASS);
+    }
     this.painted.clear();
+  }
+
+  /* ── The sweep ─────────────────────────────────────────────────────── */
+
+  /* Thrown with the switch, ahead of the redraw that carries it out. What
+     the sweep looks like is all in styles.css; this side owns when its class
+     goes on and comes off, and keeping the cover drawn on the way out.
+   *
+     Only the switch sweeps. The cover also comes and goes on its own — it
+     lifts when the last note closes and returns with the next one — and
+     those stay instant: nobody asked for anything there, so there is nothing
+     to answer with a flourish. */
+  private startSweep(way: "in" | "out"): void {
+    this.dropSweep();
+    /* Switched off with no note open: the cover was not drawn, so there is
+       nothing on screen to sweep away. */
+    if (way === "out" && this.focusPath === null) return;
+    this.sweep = { way, from: this.focusPath, timer: null };
+  }
+
+  /* Waits the sweep out, then hands over to an ordinary redraw.
+   *
+     How long is read off the animations themselves rather than written down
+     here, so the stylesheet stays the one place the timing lives: a snippet
+     that slows it down, or reduced motion switching it off, is followed
+     without this side being told. Read again each time the wait runs out,
+     because the rows can change under a running sweep — folding the tree
+     away on the way in moves every bar's distance, and its delay with it.
+   *
+     A timer rather than animationend, for the reason animateReorder gives: a
+     window in the background may never finish an animation, and the cover
+     has to settle regardless. The cap keeps that promise for a sweep whose
+     clock has stopped altogether. */
+  private timeSweep(sweep: Sweep): void {
+    const started = Date.now();
+    const check = () => {
+      const left = this.sweepRemaining();
+      if (left > 0 && Date.now() - started < SWEEP_CAP_MS) {
+        sweep.timer = window.setTimeout(check, left + 30);
+      } else {
+        this.finishSweep();
+      }
+    };
+    /* Not measured on the spot: the marks this redraw set off are still
+       settling, and the first look waits for them. */
+    sweep.timer = window.setTimeout(check, 0);
+  }
+
+  /* The longest any running sweep still has to go, in milliseconds. */
+  private sweepRemaining(): number {
+    let left = 0;
+    for (const doc of this.explorerDocuments()) {
+      for (const animation of doc.getAnimations()) {
+        /* By name rather than `instanceof CSSAnimation`, which is bound to
+           the window it was evaluated in and says no to every animation in a
+           popped-out one. */
+        const name = (animation as Partial<CSSAnimation>).animationName;
+        if (!name?.startsWith(SWEEP_ANIMATION)) continue;
+        const end = animation.effect?.getComputedTiming().endTime;
+        const now = animation.currentTime;
+        if (typeof end === "number" && typeof now === "number") {
+          left = Math.max(left, end - now);
+        }
+      }
+    }
+    return left;
+  }
+
+  private finishSweep(): void {
+    if (!this.sweep) return;
+    this.dropSweep();
+    this.redraw();
+  }
+
+  private dropSweep(): void {
+    if (this.sweep?.timer != null) window.clearTimeout(this.sweep.timer);
+    this.sweep = null;
   }
 
   private observeExplorer(): void {
@@ -1127,6 +1248,10 @@ export default class ImmersiveFolderPlugin extends Plugin {
         new Notice(this.t.sortUnavailable);
         return;
       }
+      /* A cover still lifting off is still a cover, and the two take turns.
+         Clicked through within that second, it is lifted at once rather than
+         left to grow grips under its bars. */
+      this.finishSweep();
     }
 
     this.dragSort.setActive(!this.dragSort.isActive());

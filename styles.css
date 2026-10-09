@@ -15,6 +15,17 @@ body {
   --immersive-folder-bar: var(--background-modifier-border);
   --immersive-folder-bar-opacity: 1;
   --immersive-folder-bar-opacity-far: 0.2;
+
+  /* The sweep, played as immersive mode is switched on or off: a light runs
+     along each bar from left to right, laying it down on the way in and
+     lifting it on the way out. One bar takes --immersive-folder-sweep to
+     cross; the bars further out start later, the farthest by
+     --immersive-folder-sweep-spread, so the cover spreads out from the folder
+     you are in rather than landing everywhere at once. Set both to 0s to
+     switch it off. */
+  --immersive-folder-sweep: 560ms;
+  --immersive-folder-sweep-spread: 420ms;
+  --immersive-folder-shimmer: var(--color-accent);
 }
 
 /* Either button carries an accent wash while its mode is on. Obsidian's own
@@ -68,6 +79,11 @@ body {
         var(--immersive-folder-bar-opacity-far) -
           var(--immersive-folder-bar-opacity)
       ) * var(--immersive-folder-fade, 0)
+  );
+  /* The same figure says when a row's sweep starts, which is what makes it
+     travel outwards from the readable block: nearest bars first. */
+  --immersive-folder-sweep-delay: calc(
+    var(--immersive-folder-fade, 0) * var(--immersive-folder-sweep-spread)
   );
 }
 
@@ -226,6 +242,149 @@ body {
   .tree-item-self.immersive-folder-reveal
   .nav-file-tag {
   opacity: 1;
+}
+
+/* ── The sweep ─────────────────────────────────────────────────────────── */
+
+/* Each bar is laid down by a light travelling along it. The light and the
+   edge of the bar are two layers sized and moved by the same numbers — a
+   background twice the bar's width, slid from one end to the other, and a
+   clip whose edge sits where the middle of that background does — so the
+   light stays on the edge without either having to be told where the other
+   is. The bright end of the light is cut off at the edge, which is what
+   makes it read as the tip of something drawing rather than a glow passing
+   over. Both run on past the bar's far end by the length of the light's
+   tail, so the last of it leaves the bar instead of being switched off on
+   it.
+ *
+   Only the bars are swept in. The names go the instant the switch is
+   thrown, with no fade: this is a cover for screen sharing, and a name left
+   to dissolve over half a second is half a second of names in a recording.
+   The class that carries this rule is only up for the length of the sweep,
+   so a row scrolled into view later arrives covered, as it always did. */
+.immersive-folder-on.immersive-folder-entering
+  .nav-files-container
+  .tree-item-self
+  :is(.tree-item-inner, .iconize-icon)::after {
+  background-image: linear-gradient(
+    90deg,
+    transparent 38%,
+    var(--immersive-folder-shimmer) 50%,
+    transparent 50%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: immersive-folder-sweep-in var(--immersive-folder-sweep)
+    cubic-bezier(0.3, 0, 0.2, 1) var(--immersive-folder-sweep-delay) both;
+}
+
+@keyframes immersive-folder-sweep-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+    background-position: 100% 0;
+  }
+  to {
+    clip-path: inset(0 -24% 0 0);
+    background-position: -24% 0;
+  }
+}
+
+/* The way out runs the same direction: the light goes in front, the bar is
+   lifted behind it, and the name comes back up through the gap. The tail of
+   the light now trails ahead of the edge, over what is still covered. */
+.immersive-folder-on.immersive-folder-leaving
+  .nav-files-container
+  .tree-item-self
+  :is(.tree-item-inner, .iconize-icon)::after {
+  background-image: linear-gradient(
+    90deg,
+    transparent 50%,
+    var(--immersive-folder-shimmer) 50%,
+    transparent 62%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: immersive-folder-sweep-out var(--immersive-folder-sweep)
+    cubic-bezier(0.3, 0, 0.2, 1) var(--immersive-folder-sweep-delay) both;
+}
+
+@keyframes immersive-folder-sweep-out {
+  from {
+    clip-path: inset(0 0 0 -24%);
+    background-position: 124% 0;
+  }
+  to {
+    clip-path: inset(0 0 0 100%);
+    background-position: 0 0;
+  }
+}
+
+/* Unlike the way in, the names may take their time coming back: nothing is
+   being hidden any more. One class more than the cover rules these undo, so
+   they win on specificity rather than on where they sit in the file.
+ *
+   Keyframes rather than transitions, though a transition would be shorter
+   to write. Leaving restores every folder that was open before, and the
+   rows that brings in are born during the sweep with no earlier style to
+   transition from — measured: their names showed at once, with a bar still
+   lying across them. An animation starts with the row, wherever it came
+   from. Each keyframe states only where it starts, and ends on whatever the
+   row would show anyway.
+ *
+   The readable rows are left out by name. They never lost their names, and
+   without the :not() they were taken back to transparent along with
+   everything else and faded in again — the one block meant to stay put,
+   blinking out as the cover lifted. */
+.immersive-folder-on.immersive-folder-leaving
+  .nav-files-container
+  .tree-item-self:not(.immersive-folder-reveal)
+  .tree-item-inner {
+  color: inherit;
+  animation: immersive-folder-sweep-name var(--immersive-folder-sweep)
+    ease-in-out var(--immersive-folder-sweep-delay) both;
+}
+
+.immersive-folder-on.immersive-folder-leaving
+  .nav-files-container
+  .tree-item-self:not(.immersive-folder-reveal)
+  .nav-file-tag {
+  opacity: 1;
+  animation: immersive-folder-sweep-tag var(--immersive-folder-sweep)
+    ease-in-out var(--immersive-folder-sweep-delay) both;
+}
+
+/* Visibility cannot fade; it turns on the moment its sweep starts. */
+.immersive-folder-on.immersive-folder-leaving
+  .nav-files-container
+  .tree-item-self:not(.immersive-folder-reveal)
+  .iconize-icon {
+  visibility: visible;
+  animation: immersive-folder-sweep-icon var(--immersive-folder-sweep) linear
+    var(--immersive-folder-sweep-delay) both;
+}
+
+/* The name waits until the light is most of the way across before it comes
+   up. Fading from the first moment, it showed through the part of the bar
+   not yet lifted and read as struck through, with the light smudged over
+   it. */
+@keyframes immersive-folder-sweep-name {
+  from,
+  45% {
+    color: transparent;
+  }
+}
+
+@keyframes immersive-folder-sweep-tag {
+  from,
+  45% {
+    opacity: 0;
+  }
+}
+
+@keyframes immersive-folder-sweep-icon {
+  from {
+    visibility: hidden;
+  }
 }
 
 /* ── Arrange mode ──────────────────────────────────────────────────────── */
@@ -437,6 +596,27 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .immersive-folder-sorting .tree-item-self[data-immersive-folder-hint] {
+    animation: none;
+  }
+
+  /* The sweep's own selectors, repeated word for word: equal weight, and
+     later in the file, so these win. With nothing running, the plugin finds
+     no sweep to wait on and switches straight across. */
+  .immersive-folder-on.immersive-folder-entering
+    .nav-files-container
+    .tree-item-self
+    :is(.tree-item-inner, .iconize-icon)::after,
+  .immersive-folder-on.immersive-folder-leaving
+    .nav-files-container
+    .tree-item-self
+    :is(.tree-item-inner, .iconize-icon)::after {
+    animation: none;
+  }
+
+  .immersive-folder-on.immersive-folder-leaving
+    .nav-files-container
+    .tree-item-self:not(.immersive-folder-reveal)
+    :is(.tree-item-inner, .nav-file-tag, .iconize-icon) {
     animation: none;
   }
 }
