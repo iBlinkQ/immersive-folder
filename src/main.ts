@@ -44,6 +44,10 @@ interface ImmersiveFolderSettings {
      the focused folder however deep, instead of only the row sitting directly
      in it. See spares(). */
   revealSubfolders: boolean;
+  /* How far up: with this on the folders above the focused one keep their
+     names, the path from it back to the root and nothing beside that path.
+     Off by default. See spares(). */
+  revealAncestors: boolean;
   /* Which folders were open before the tree was folded down, so leaving
      immersive mode can hand the explorer back the way it was found. */
   expandedBefore: string[];
@@ -84,6 +88,7 @@ const DEFAULT_SETTINGS: ImmersiveFolderSettings = {
   keepActiveInView: true,
   collapseOthers: true,
   revealSubfolders: true,
+  revealAncestors: false,
   expandedBefore: [],
   orders: {},
 };
@@ -115,6 +120,8 @@ interface Strings {
   collapseDesc: string;
   revealInside: string;
   revealInsideDesc: string;
+  revealAbove: string;
+  revealAboveDesc: string;
   disclaimer: string;
   dragName: string;
   dragIntro: string;
@@ -175,8 +182,15 @@ const EN: Strings = {
     "The cover spares the folder you are in and whatever sits directly in " +
     "it. Switch this on and it spares the rest of the way down as well: " +
     "open a subfolder and its contents read normally instead of turning " +
-    "into bars. Everything outside the folder you are in, the folders above " +
-    "it included, is covered either way.",
+    "into bars. The folders beside the one you are in are covered either " +
+    "way; the ones above it have a setting of their own, just below.",
+  revealAbove: "Keep the folders above this one readable",
+  revealAboveDesc:
+    "Every folder from the one you are in back up to the vault root keeps " +
+    "its name, so you can still tell where you are in the tree. Off by " +
+    "default, because a top-level folder name is often the most telling " +
+    "thing on the screen. Only the path itself is spared: the folders beside " +
+    "it stay covered either way.",
   disclaimer:
     "Immersive folder is a visual cover, not encryption. It is built for " +
     "screen sharing, recordings and the person sitting next to you — the " +
@@ -245,7 +259,12 @@ const ZH: Strings = {
   revealInsideDesc:
     "开启沉浸模式后，当前文件夹里不管展开到第几层，文件名和文件夹名都照常显示。" +
     "关掉这一项，就只显示直接放在它里面的文件和文件夹，再往里展开一层又是骨架条。" +
-    "当前文件夹以外不受影响，上层和旁边的文件夹一律遮住。",
+    "当前文件夹以外不受影响，旁边的文件夹一律遮住，上层文件夹看下一项。",
+  revealAbove: "显示上层文件夹",
+  revealAboveDesc:
+    "开启沉浸模式后，从当前文件夹往上一直到库的根目录，沿途每一层文件夹的名字都照常显示，" +
+    "看得出自己在树的哪个位置。默认关闭，上层文件夹和其他文件夹一样变成骨架条 —— " +
+    "顶层文件夹的名字往往最能透露你在做什么。只放开这条路径本身，路径旁边的文件夹照样遮住。",
   disclaimer:
     "沉浸模式是视觉遮挡，不是加密。它是为投屏、录屏和你旁边那个人准备的 —— " +
     "那些名字仍然在页面里，任何人打开开发者工具都能读到。",
@@ -523,7 +542,13 @@ export default class ImmersiveFolderPlugin extends Plugin {
     /* Keys that used to be settings and are not any more. Object.assign copies
        whatever the file happens to hold, so without this they would ride along
        in memory and be written straight back out on the next save, leaving a
-       settings file advertising switches the plugin no longer has. */
+       settings file advertising switches the plugin no longer has.
+     *
+       revealTrail is the same idea as revealAncestors, and its name was left
+       unused on purpose. It defaulted to on, and a settings file that has not
+       been written since it went away can still hold that `true` — reusing
+       the name would quietly open the trail for exactly the people who never
+       asked for it. */
     const stale = this.settings as unknown as Record<string, unknown>;
     for (const key of ["revealOnEnable", "revealTrail"]) delete stale[key];
   }
@@ -663,13 +688,17 @@ export default class ImmersiveFolderPlugin extends Plugin {
       const order = visibleRowOrder(view);
       if (!order) continue;
 
-      /* The readable rows form one unbroken run — a folder and its
-         descendants sit together in a depth-first walk — so the two ends of
-         that run are all a distance needs to be measured from. */
+      /* Measured from the focused folder and what is inside it, which form
+         one unbroken run — a folder and its descendants sit together in a
+         depth-first walk — so the two ends of that run are all a distance
+         needs. The folders above it are left out even when they are
+         readable: they sit apart from that run, with covered rows in
+         between, and the fade is about how far a bar is from what you are
+         working in, not from every name that happens to be showing. */
       let first = -1;
       let last = -1;
       order.forEach((path, index) => {
-        if (!this.spares(path, focus)) return;
+        if (!this.within(path, focus)) return;
         if (first < 0) first = index;
         last = index;
       });
@@ -722,30 +751,42 @@ export default class ImmersiveFolderPlugin extends Plugin {
     }
   }
 
-  /* Which rows keep their real name: the focused folder itself, and what is
-     inside it. Everything else goes under a bar, the folders *above* the
-     focused one included.
+  /* Which rows keep their real name: the focused folder itself and what is
+     inside it, plus — only if asked for — the folders above it. Everything
+     else goes under a bar, and the folders *beside* the focused one always
+     do.
    *
-     How far "inside" reaches is the one thing here that is a preference.
-     `revealSubfolders` on — the default — means the whole subtree: open a
-     subfolder next to the note you are in and you can read what is in it,
-     because you opened it on purpose and it is part of the folder you are
-     working in. Off is the older, tighter rule: the direct children only, one
-     segment down and no deeper, so anything you open below that goes back
-     under bars. Note what the loose rule means at the vault root, where the
-     focused folder *is* the whole vault: there is nothing outside it left to
-     cover, and only "collapse every other folder" keeps the tree down.
-   *
-     That last part was a setting once, defaulting to on. It is not one any
-     more, because a top-level folder name is usually the most telling thing on
-     the screen — the trail was handing away the very names the cover is up to
-     hide, and on a plugin built for screen sharing that is not a preference,
-     it is a hole. What still tells you where you are is the indentation, which
-     the cover never touches.
+     The trail above was a setting once before, defaulting to on, and was
+     taken away because a top-level folder name is usually the most telling
+     thing on the screen: the trail was handing away the very names the cover
+     is up to hide, and on a plugin built for screen sharing that is a hole
+     rather than a preference. It is back as a setting, but the default is
+     what closed the hole, and that is what stays — covered unless you open it
+     yourself, for when knowing where you are matters more to you than who
+     might be looking. Without it, the indentation still tells you how deep
+     you are, which the cover never touches.
    *
      Comparing paths rather than walking the DOM means a row is judged the
      moment it is created, however the explorer chose to nest it. */
   private spares(path: string, focus: string): boolean {
+    if (this.within(path, focus)) return true;
+    /* An ancestor is a path the focus continues from. At the vault root
+       nothing is above, and the root's own row is never drawn. */
+    return this.settings.revealAncestors && focus.startsWith(`${path}/`);
+  }
+
+  /* The focused folder and how far down inside it the cover lets you read.
+   *
+     How far is a preference. `revealSubfolders` on — the default — means the
+     whole subtree: open a subfolder next to the note you are in and you can
+     read what is in it, because you opened it on purpose and it is part of
+     the folder you are working in. Off is the older, tighter rule: the direct
+     children only, one segment down and no deeper, so anything you open below
+     that goes back under bars. Note what the loose rule means at the vault
+     root, where the focused folder *is* the whole vault: there is nothing
+     outside it left to cover, and only "collapse every other folder" keeps
+     the tree down. */
+  private within(path: string, focus: string): boolean {
     const deep = this.settings.revealSubfolders;
     /* Focused on the vault root: everything is inside it, so the tight rule
        falls back to "no separator anywhere in the path" — the top level and
@@ -1158,6 +1199,11 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         desc: t.revealInsideDesc,
         control: { type: "toggle", key: "revealSubfolders" },
       },
+      {
+        name: t.revealAbove,
+        desc: t.revealAboveDesc,
+        control: { type: "toggle", key: "revealAncestors" },
+      },
       { name: t.dragName, desc: t.dragIntro },
       { name: t.disclaimerName, desc: t.disclaimer },
     ];
@@ -1197,6 +1243,10 @@ class ImmersiveFolderSettingTab extends PluginSettingTab {
         /* Nothing to fold or scroll — which rows are spared is recomputed on
            the redraw saveSettings() already runs. */
         plugin.settings.revealSubfolders = Boolean(value);
+        break;
+      case "revealAncestors":
+        /* Same as above: a redraw is all it takes. */
+        plugin.settings.revealAncestors = Boolean(value);
         break;
       case "toolbarButtons":
         plugin.settings.toolbarButtons = value as ToolbarButtons;

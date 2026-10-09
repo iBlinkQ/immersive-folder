@@ -84,8 +84,15 @@ back when you leave immersive mode. On by default.
 **Keep everything inside this folder readable** — the cover spares the folder
 you are in and whatever sits directly in it. Switch this on and it spares the
 rest of the way down as well: open a subfolder and its contents read normally
-instead of turning into bars. Everything outside the folder you are in, the
-folders above it included, is covered either way. On by default.
+instead of turning into bars. The folders beside the one you are in are
+covered either way; the ones above it have their own setting below. On by
+default.
+
+**Keep the folders above this one readable** — every folder from the one you
+are in back up to the vault root keeps its name, so you can still tell where
+you are in the tree. Only the path itself is spared: the folders beside it stay
+covered either way. Off by default, because a top-level folder name is often
+the most telling thing on the screen.
 
 ## What it does not do
 
