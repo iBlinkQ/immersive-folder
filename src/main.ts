@@ -8,6 +8,8 @@ import {
   SettingDefinitionItem,
   setIcon,
   TFolder,
+  WorkspaceMobileDrawer,
+  WorkspaceSidedock,
 } from "obsidian";
 
 /* The explorer's own insides — declared and runtime-checked in one place. */
@@ -461,6 +463,11 @@ export default class ImmersiveFolderPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("active-leaf-change", redraw));
     this.registerEvent(this.app.workspace.on("layout-change", redraw));
     this.registerEvent(this.app.vault.on("rename", redraw));
+    /* Opening a collapsed sidebar is only a resize, not a layout change. It
+       is the moment a sync skipped by explorerTucked() can finally run. */
+    this.registerEvent(
+      this.app.workspace.on("resize", () => this.syncExplorer())
+    );
 
     /* Pruning waits for the layout: it asks the vault whether each recorded
        path still exists, and before the vault has finished indexing every
@@ -940,6 +947,12 @@ export default class ImmersiveFolderPlugin extends Plugin {
       return;
     }
 
+    /* reveal-active-file also expands the sidebar the explorer sits in, so
+       running it here would pop a sidebar the user had closed every time
+       they switched notes. Wait instead: opening the sidebar fires a resize,
+       which calls back in while lastSyncedPath is still stale. */
+    if (this.explorerTucked()) return;
+
     const file = this.app.workspace.getActiveFile();
     if (!file || file.path === this.lastSyncedPath) return;
     this.lastSyncedPath = file.path;
@@ -950,6 +963,22 @@ export default class ImmersiveFolderPlugin extends Plugin {
         "file-explorer:reveal-active-file"
       );
     }
+  }
+
+  /* True when every file explorer lives in a collapsed sidebar. */
+  private explorerTucked(): boolean {
+    const { leftSplit, rightSplit } = this.app.workspace;
+    const leaves = this.app.workspace.getLeavesOfType("file-explorer");
+    return (
+      leaves.length > 0 &&
+      leaves.every((leaf) => {
+        const root = leaf.getRoot();
+        return (
+          (root === leftSplit || root === rightSplit) &&
+          (root as WorkspaceSidedock | WorkspaceMobileDrawer).collapsed
+        );
+      })
+    );
   }
 
   /* Collapse every folder that is not on the way to `keep`. The trail itself
